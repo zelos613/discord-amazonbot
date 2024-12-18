@@ -7,7 +7,26 @@ import hashlib
 import hmac
 import datetime
 import base64
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
+
+# ダミーHTTPサーバー（Koyebのヘルスチェック用）
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b'OK')  # Koyebのヘルスチェック用レスポンス
+
+# ヘルスチェックサーバーを別スレッドで実行
+def run_health_check_server():
+    server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
+    print("Health check server is running on port 8000...")
+    server.serve_forever()
+
+# HTTPサーバーを別スレッドで起動
+threading.Thread(target=run_health_check_server, daemon=True).start()
 
 # ===============================
 # 環境変数の読み込み
