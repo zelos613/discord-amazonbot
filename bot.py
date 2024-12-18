@@ -125,7 +125,9 @@ async def on_message(message):
         return
 
     # Amazonリンクを検出
+    print(f"Received message: {message.content}")  # 受信したメッセージを表示
     urls = re.findall(AMAZON_URL_REGEX, message.content)
+    print(f"Extracted URLs: {urls}")  # 正規表現で抽出されたURLを表示
     for url in urls:
         # 短縮URLを展開
         expanded_url = expand_short_url(url)
