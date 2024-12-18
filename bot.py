@@ -21,7 +21,7 @@ AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')
 AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')
 
-# 正規表現: Amazonリンクの検出
+# 正規表現: Amazonリンクの検出 (短縮URL含む)
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia)/[\w\-/\?=&%\.]+)"
 
 # ===============================
@@ -64,7 +64,7 @@ def amazon_signed_request(asin):
 
 # ASINをURLから抽出
 def extract_asin(url):
-    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", url)
+    match = re.search(r"/(?:dp|gp/product|d)/([A-Z0-9]{10})", url)
     return match.group(1) if match else None
 
 # Amazon PA-APIから商品情報を取得
@@ -100,7 +100,7 @@ def shorten_url(long_url):
 # Discord Bot本体
 # ===============================
 intents = discord.Intents.default()
-intents.messages = True
+intents.message_content = True  # メッセージ内容取得を有効化
 client = discord.Client(intents=intents)
 
 @client.event
@@ -113,6 +113,11 @@ async def on_message(message):
         return  # Bot自身のメッセージは無視
 
     print(f"受信者: {message.author}, メッセージ: {message.content!r}")
+
+    if not message.content:  # メッセージが空の場合
+        print("メッセージが空です。意図しない動作の可能性があります。")
+        return
+
     sanitized_content = message.content.replace("\n", " ")  # 改行をスペースに置き換え
     print(f"Sanitized Content: {sanitized_content}")
 
