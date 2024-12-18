@@ -122,29 +122,40 @@ async def on_ready():
 @client.event
 async def on_message(message):
     # デバッグ: 受信メッセージと送信者を出力
-    print(f"受信者: {message.author}, メッセージ: {message.content}")
+    print(f"受信者: {message.author}, メッセージ: {message.content!r}")
     
     if message.author.bot:  # Bot自身のメッセージを無視
         print("Botメッセージのため無視")
         return
 
+    # 改行をスペースに置き換え (URL検出のため)
+    sanitized_content = message.content.replace("\n", " ")
+    print(f"正規化メッセージ: {sanitized_content!r}")
+
     # URLの検出
-    urls = re.findall(AMAZON_URL_REGEX, message.content)
+    urls = re.findall(AMAZON_URL_REGEX, sanitized_content)
     print(f"検出されたURL: {urls}")
 
     for url in urls:
+        print(f"検出されたURL: {url}")  # URLが正しく検出されるかデバッグ出力
+
+        # 短縮URLを展開
         expanded_url = expand_short_url(url)
         print(f"展開されたURL: {expanded_url}")
         asin = extract_asin(expanded_url)
         print(f"抽出されたASIN: {asin}")
 
         if asin:
+            # Amazon PA-APIから商品情報取得
             title, price, image_url = fetch_amazon_data(asin)
             print(f"取得した商品情報: タイトル={title}, 価格={price}, 画像URL={image_url}")
+
+            # アソシエイトリンクを生成
             associate_link = f"{expanded_url}?tag={AMAZON_ASSOCIATE_TAG}"
             short_url = shorten_url(associate_link)
             print(f"短縮リンク: {short_url}")
 
+            # 埋め込みメッセージの生成
             embed = discord.Embed(
                 title=title or "Amazon商品リンク",
                 url=short_url,
@@ -158,6 +169,7 @@ async def on_message(message):
             print("埋め込みメッセージを送信しました")
         else:
             print("ASINが抽出されませんでした")
+
 
 # Botを起動
 client.run(TOKEN)
