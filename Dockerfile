@@ -11,8 +11,8 @@ COPY . /app
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# ポート番号の指定（Koyebの仕様）
+# ポート番号の指定（Koyebのヘルスチェック用）
 EXPOSE 8000
 
-# Botの実行コマンド
-CMD ["python", "bot.py"]
+# ヘルスチェックサーバーとDiscord Botを起動する
+CMD ["python", "-u", "bot.py"]
