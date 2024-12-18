@@ -40,7 +40,8 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')  # Amazonアソシエ�
 BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')  # Bitly APIトークン
 
 # Amazonリンクの正規表現
-AMAZON_URL_REGEX = r"https?://(?:www\.)?amazon\.co\.jp/[^\s]+|https?://amzn\.asia/[^\s]+"
+AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia)/[^\s]+)"
+
 
 # ===============================
 # 関数部分
