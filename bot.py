@@ -85,7 +85,8 @@ def extract_asin(url):
         if match:
             return match.group(1)
         # 短縮URLのリダイレクト検索
-        expanded_url = requests.head(url, allow_redirects=True).url
+        response = requests.get(url, allow_redirects=True, timeout=5)
+        expanded_url = response.url
         match = re.search(r"(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
         if match:
             return match.group(1)
@@ -102,7 +103,7 @@ def fetch_amazon_data(asin):
     try:
         print(f"Fetching data for ASIN: {asin}")
         response = amazon_signed_request(asin)
-        if response and "ItemsResult" in response:
+        if response and "ItemsResult" in response and "Items" in response["ItemsResult"]:
             item = response["ItemsResult"]["Items"][0]
             title = item["ItemInfo"]["Title"]["DisplayValue"]
             price = item.get("Offers", {}).get("Listings", [{}])[0].get("Price", {}).get("DisplayAmount", "N/A")
@@ -136,7 +137,7 @@ async def on_message(message):
         await message.channel.send("リンクを確認中です...\ud83d\udd0d")
         asin = extract_asin(url)
         if not asin:
-            await message.channel.send("ASINが取得できませんでした。")
+            await message.channel.send("ASINが取得できませんでした。\ud83d\udeab")
             continue
 
         title, price, image_url = fetch_amazon_data(asin)
