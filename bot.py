@@ -43,6 +43,8 @@ BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')  # Bitly APIトークン
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia)/[^\s]+)"
 
 
+
+
 # ===============================
 # 関数部分
 # ===============================
@@ -129,16 +131,16 @@ async def on_message(message):
         print("Botメッセージのため無視")
         return
 
+    # URLの検出前にデバッグログを出力
+    print(f"URL正規表現: {AMAZON_URL_REGEX}")
+    print(f"メッセージ内容: {message.content}")
+    
     # URLの検出
     urls = re.findall(AMAZON_URL_REGEX, message.content)
-    print(f"検出されたURL: {urls} (型: {type(urls)})")  # 正しくURLが検出されるかデバッグ
-
-    if not urls:  # 空の場合の確認
-        print("URLの検出に失敗しました")
-        return
+    print(f"検出されたURL: {urls} (型: {type(urls)})")
 
     for url in urls:
-        print(f"処理中のURL: {url}")  # 確認用出力
+        print(f"検出されたURL: {url}")  # URLが正しく検出されるかデバッグ出力
 
         # 短縮URLを展開
         expanded_url = expand_short_url(url)
