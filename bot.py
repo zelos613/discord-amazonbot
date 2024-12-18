@@ -128,6 +128,13 @@ async def on_message(message):
         print("Botメッセージのため無視")
         return
 
+    
+    # 正規表現のテスト
+    test_urls = ["https://www.amazon.co.jp/dp/B07NZZZ746", "https://amzn.asia/d/7ofjjGq"]
+    for test_url in test_urls:
+        match = re.findall(AMAZON_URL_REGEX, test_url)
+        print(f"テストURL: {test_url}, マッチ結果: {match}")
+
     # URLの検出
     urls = re.findall(AMAZON_URL_REGEX, message.content)
     print(f"検出されたURL: {urls}")
