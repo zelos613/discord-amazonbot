@@ -39,7 +39,8 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')  # Amazonアソシエ�
 BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')  # Bitly APIトークン
 
 # Amazonリンクの正規表現
-AMAZON_URL_REGEX = r"(https?://(www\.)?amazon\.co\.jp/[\S]+|https?://amzn\.asia/[\S]+)"
+AMAZON_URL_REGEX = r"(https?://(www\.)?amazon\.co\.jp/[^\s]+|https?://amzn\.asia/[^\s]+)"
+
 
 # ===============================
 # 関数部分
@@ -134,14 +135,16 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Amazonリンクを検出
-    print(f"Received message: {message.content}")  # 受信したメッセージを表示
+    print(f"受信メッセージ: {message.content}")  # メッセージ内容を出力
     urls = re.findall(AMAZON_URL_REGEX, message.content)
-    print(f"Extracted URLs: {urls}")  # 正規表現で抽出されたURLを表示
+    print(f"検出されたURL: {urls}")  # 検出されたURLを出力
+
     for url in urls:
         # 短縮URLを展開
         expanded_url = expand_short_url(url)
+        print(f"展開されたURL: {expanded_url}")
         asin = extract_asin(expanded_url)
+        print(f"抽出されたASIN: {asin}")
 
         if asin:
             # Amazon PA-APIから商品情報取得
@@ -152,11 +155,12 @@ async def on_message(message):
 
             # Bitlyでリンクを短縮
             short_url = shorten_url(associate_link)
+            print(f"短縮リンク: {short_url}")
 
-            # 埋め込みメッセージの生成（商品名にリンクを設定）
+            # 埋め込みメッセージの生成
             embed = discord.Embed(
                 title=title or "Amazon商品リンク",
-                url=short_url,  # 商品名部分に短縮リンクを埋め込む
+                url=short_url,
                 description=f"**価格**: {price or '情報なし'}",
                 color=discord.Color.blue()
             )
@@ -166,6 +170,7 @@ async def on_message(message):
 
             # 埋め込みメッセージを送信
             await message.channel.send(embed=embed)
+
 
 # Botを起動
 client.run(TOKEN)
