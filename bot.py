@@ -62,10 +62,19 @@ def amazon_signed_request(asin):
     signature = base64.b64encode(hmac.new(AMAZON_SECRET_KEY.encode(), string_to_sign.encode(), hashlib.sha256).digest()).decode()
     return f"https://{endpoint}{uri}?{sorted_params}&Signature={signature}"
 
-# ASINをURLから抽出
+# 短縮URLを展開してASINを取得
 def extract_asin(url):
-    match = re.search(r"/(?:dp|gp/product|d)/([A-Z0-9]{10})", url)
-    return match.group(1) if match else None
+    try:
+        # 短縮URLを展開
+        response = requests.head(url, allow_redirects=True)
+        expanded_url = response.url
+        print(f"展開されたURL: {expanded_url}")
+        # 正規表現でASINを抽出
+        match = re.search(r"/(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
+        return match.group(1) if match else None
+    except Exception as e:
+        print(f"URL展開中にエラー: {e}")
+        return None
 
 # Amazon PA-APIから商品情報を取得
 def fetch_amazon_data(asin):
