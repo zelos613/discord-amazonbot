@@ -2,7 +2,7 @@ import os
 import discord
 import re
 import requests
-import json
+import xml.etree.ElementTree as ET
 import hashlib
 import hmac
 import datetime
@@ -42,9 +42,6 @@ BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')  # Bitly APIトークン
 # Amazonリンクの正規表現
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia)/[^\s]+)"
 
-
-
-
 # ===============================
 # 関数部分
 # ===============================
@@ -71,9 +68,9 @@ def amazon_signed_request(asin):
 def expand_short_url(short_url):
     try:
         response = requests.head(short_url, allow_redirects=True)
-        return response.url  # リダイレクト先のURLを取得
+        return response.url
     except requests.RequestException:
-        return short_url  # 取得失敗時はそのまま返す
+        return short_url
 
 # BitlyでURLを短縮
 def shorten_url(long_url):
@@ -84,31 +81,31 @@ def shorten_url(long_url):
         if response.status_code == 200:
             return response.json().get("link")
         else:
-            print(f"Bitlyエラー: {response.text}")
+            print(f"Bitlyエラー: {response.status_code} - {response.text}")
             return long_url
     except Exception as e:
         print(f"Bitly例外: {e}")
         return long_url
 
-# ASINをURLから抽出
+# ASINをURLから抽出 (複数の形式に対応)
 def extract_asin(url):
-    match = re.search(r"/dp/([A-Z0-9]+)", url)
+    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]+)", url)
     return match.group(1) if match else None
 
-# Amazon PA-APIから商品情報を取得
+# Amazon PA-APIから商品情報を取得 (XML解析)
 def fetch_amazon_data(asin):
     url = amazon_signed_request(asin)
     response = requests.get(url)
     if response.status_code == 200:
         try:
-            data = json.loads(response.text)
-            item = data['ItemLookupResponse']['Items']['Item']
-            title = item['ItemAttributes']['Title']
-            price = item['Offers']['Offer']['Price']['FormattedPrice']
-            image_url = item['LargeImage']['URL']
+            root = ET.fromstring(response.content)
+            ns = {"ns": "http://webservices.amazon.com/AWSECommerceService/2011-08-01"}
+            title = root.find(".//ns:Title", ns).text
+            price = root.find(".//ns:FormattedPrice", ns).text
+            image_url = root.find(".//ns:LargeImage/ns:URL", ns).text
             return title, price, image_url
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"XML解析エラー: {e}")
     return None, None, None
 
 # ===============================
@@ -131,34 +128,23 @@ async def on_message(message):
         print("Botメッセージのため無視")
         return
 
-    # URLの検出前にデバッグログを出力
-    print(f"URL正規表現: {AMAZON_URL_REGEX}")
-    print(f"メッセージ内容: {message.content}")
-    
     # URLの検出
     urls = re.findall(AMAZON_URL_REGEX, message.content)
-    print(f"検出されたURL: {urls} (型: {type(urls)})")
+    print(f"検出されたURL: {urls}")
 
     for url in urls:
-        print(f"検出されたURL: {url}")  # URLが正しく検出されるかデバッグ出力
-
-        # 短縮URLを展開
         expanded_url = expand_short_url(url)
         print(f"展開されたURL: {expanded_url}")
         asin = extract_asin(expanded_url)
         print(f"抽出されたASIN: {asin}")
 
         if asin:
-            # Amazon PA-APIから商品情報取得
             title, price, image_url = fetch_amazon_data(asin)
             print(f"取得した商品情報: タイトル={title}, 価格={price}, 画像URL={image_url}")
-
-            # アソシエイトリンクを生成
             associate_link = f"{expanded_url}?tag={AMAZON_ASSOCIATE_TAG}"
             short_url = shorten_url(associate_link)
             print(f"短縮リンク: {short_url}")
 
-            # 埋め込みメッセージの生成
             embed = discord.Embed(
                 title=title or "Amazon商品リンク",
                 url=short_url,
@@ -168,13 +154,10 @@ async def on_message(message):
             if image_url:
                 embed.set_thumbnail(url=image_url)
             embed.set_footer(text="Botが情報をお届けしました！")
-
-            # メッセージ送信
             await message.channel.send(embed=embed)
             print("埋め込みメッセージを送信しました")
         else:
             print("ASINが抽出されませんでした")
-
 
 # Botを起動
 client.run(TOKEN)
