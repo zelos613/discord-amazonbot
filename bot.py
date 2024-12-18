@@ -10,6 +10,7 @@ import base64
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup  # HTML解析用ライブラリ
 
 # ===============================
 # 環境変数の読み込み
@@ -66,15 +67,30 @@ def amazon_signed_request(asin):
 def extract_asin(url):
     try:
         # 短縮URLを展開
-        response = requests.head(url, allow_redirects=True)
+        response = requests.get(url, allow_redirects=True)
         expanded_url = response.url
         print(f"展開されたURL: {expanded_url}")
-        # 正規表現でASINを抽出
+
+        # ASIN抽出
         match = re.search(r"/(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
-        return match.group(1) if match else None
+        if match:
+            return match.group(1)
+
+        # HTML本体からリダイレクトURLを解析
+        print("ASINが見つからないためHTMLを解析します。")
+        soup = BeautifulSoup(response.text, "html.parser")
+        meta_tag = soup.find("meta", attrs={"http-equiv": "refresh"})
+        if meta_tag:
+            content = meta_tag["content"]
+            redirect_url = re.search(r'url=(.*)', content, re.IGNORECASE)
+            if redirect_url:
+                expanded_url = redirect_url.group(1)
+                print(f"HTML解析で取得したURL: {expanded_url}")
+                match = re.search(r"/(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
+                return match.group(1) if match else None
     except Exception as e:
         print(f"URL展開中にエラー: {e}")
-        return None
+    return None
 
 # Amazon PA-APIから商品情報を取得
 def fetch_amazon_data(asin):
