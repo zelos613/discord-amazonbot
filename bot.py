@@ -94,7 +94,17 @@ async def on_message(message):
     if message.author.bot:
         return  # Bot自身のメッセージは無視
 
-    urls = re.findall(AMAZON_URL_REGEX, message.content)
+    print(f"受信者: {message.author}, メッセージ: {message.content!r}")
+    sanitized_content = message.content.replace("\n", " ")  # 改行をスペースに置き換え
+    print(f"Sanitized Content: {sanitized_content}")
+
+    # テスト: すべてのメッセージに反応
+    if sanitized_content:
+        await message.channel.send(f"受信しました: {sanitized_content}")
+
+    urls = re.findall(AMAZON_URL_REGEX, sanitized_content)
+    print(f"検出されたURL: {urls}")
+
     for url in urls:
         asin = extract_asin(url)
         if asin:
