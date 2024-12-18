@@ -6,8 +6,7 @@ import json
 import hashlib
 import hmac
 import datetime
-import base64
-import asyncio
+from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 
 # ===============================
@@ -22,12 +21,25 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.to|amzn\.asia)/[\w\-/\?=&%\.]+)"
 
 # ===============================
-# Amazon PA-APIリクエスト署名
+# ASINの抽出
+# ===============================
+def extract_asin(url):
+    try:
+        response = requests.head(url, allow_redirects=True, timeout=5)  # HEADで高速化
+        expanded_url = response.url
+        print(f"Expanded URL: {expanded_url}")  # Debug用
+        match = re.search(r"(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
+        if match:
+            return match.group(1)
+    except Exception as e:
+        print(f"ASIN抽出エラー: {e}")
+    return None
+
+# ===============================
+# Amazon PA-APIリクエスト
 # ===============================
 def amazon_signed_request(asin):
-    endpoint = "webservices.amazon.co.jp"
-    uri = "/paapi5/getitems"
-    headers = {'Content-Type': 'application/json'}
+    url = "https://webservices.amazon.co.jp/paapi5/getitems"
     payload = {
         "PartnerTag": AMAZON_ASSOCIATE_TAG,
         "PartnerType": "Associates",
@@ -35,34 +47,15 @@ def amazon_signed_request(asin):
         "Resources": ["Images.Primary.Large", "ItemInfo.Title", "Offers.Listings.Price"],
         "ItemIds": [asin]
     }
-
     try:
-        timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-        string_to_sign = f"POST\n{endpoint}\n{uri}\n{timestamp}"
-        signature = hmac.new(AMAZON_SECRET_KEY.encode(), string_to_sign.encode(), hashlib.sha256).hexdigest()
-        headers['X-Amz-Date'] = timestamp
-        headers['Authorization'] = f"AWS4-HMAC-SHA256 Credential={AMAZON_ACCESS_KEY}/{timestamp}, Signature={signature}"
-        url = f"https://{endpoint}{uri}"
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        headers = {
+            'Content-Type': 'application/json'
+        }
+        response = requests.post(url, json=payload, headers=headers)
+        print(f"API Response: {response.status_code} - {response.text}")
         return response.json() if response.status_code == 200 else None
     except Exception as e:
         print(f"APIリクエストエラー: {e}")
-    return None
-
-# ===============================
-# ASINの抽出（リトライ機能付き）
-# ===============================
-def extract_asin(url, retries=3):
-    for i in range(retries):
-        try:
-            response = requests.get(url, allow_redirects=True, timeout=10)
-            expanded_url = response.url
-            match = re.search(r"(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
-            if match:
-                return match.group(1)
-            print(f"ASIN抽出失敗: URL={url} (試行 {i+1}/{retries})")
-        except requests.RequestException as e:
-            print(f"ASIN抽出エラー: {e}")
     return None
 
 # ===============================
@@ -74,7 +67,6 @@ client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
-    await asyncio.sleep(1)
     print(f'Botがログインしました: {client.user}')
 
 @client.event
@@ -86,37 +78,35 @@ async def on_message(message):
     if not urls:
         return
 
+    processed_asins = set()  # 重複防止
     for url in urls:
-        await message.channel.send("リンクを確認中です... 🔍")
+        await message.channel.send("リンクを確認中です...🔍")
         asin = extract_asin(url)
-        if not asin:
-            await message.channel.send("ASINが取得できませんでした。❌")
+        if not asin or asin in processed_asins:
+            await message.channel.send("ASINが取得できませんでした。")
             continue
+        processed_asins.add(asin)
 
-        title, price, image_url = fetch_amazon_data(asin)
-        if title and price and image_url:
-            embed = discord.Embed(
-                title=title,
-                url=url,
-                description=f"**価格**: {price}\n\n商品情報を整理しました！✨️",
-                color=discord.Color.blue()
-            )
-            embed.set_thumbnail(url=image_url)
-            await message.channel.send(embed=embed)
-        else:
-            await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
-
-def fetch_amazon_data(asin):
-    try:
         response = amazon_signed_request(asin)
-        if response and "ItemsResult" in response and "Items" in response["ItemsResult"]:
-            item = response["ItemsResult"]["Items"][0]
-            title = item["ItemInfo"]["Title"]["DisplayValue"]
-            price = item.get("Offers", {}).get("Listings", [{}])[0].get("Price", {}).get("DisplayAmount", "N/A")
-            image_url = item["Images"]["Primary"]["Large"]["URL"]
-            return title, price, image_url
-    except Exception as e:
-        print(f"商品情報取得エラー: {e}")
-    return None, None, None
+        if response:
+            try:
+                item = response["ItemsResult"]["Items"][0]
+                title = item["ItemInfo"]["Title"]["DisplayValue"]
+                price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"]
+                image_url = item["Images"]["Primary"]["Large"]["URL"]
+
+                embed = discord.Embed(
+                    title=title,
+                    url=url,
+                    description=f"**価格**: {price}\n\n商品情報を整理しました！✨",
+                    color=discord.Color.blue()
+                )
+                embed.set_thumbnail(url=image_url)
+                await message.channel.send(embed=embed)
+            except Exception as e:
+                print(f"商品情報処理エラー: {e}")
+                await message.channel.send("商品情報を取得できませんでした。")
+        else:
+            await message.channel.send("Amazon APIから商品情報が取得できませんでした。")
 
 client.run(TOKEN)
