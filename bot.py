@@ -118,6 +118,9 @@ client = discord.Client(intents=intents)
 @client.event
 async def on_ready():
     print(f'Botがログインしました: {client.user}')
+    print("ボットは現在、以下のサーバーで稼働しています:")
+    for guild in client.guilds:
+        print(f"- {guild.name} (ID: {guild.id})")
 
 @client.event
 async def on_message(message):
