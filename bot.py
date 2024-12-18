@@ -7,6 +7,8 @@ import hashlib
 import hmac
 import datetime
 import base64
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 
 # ===============================
@@ -20,13 +22,29 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')
 
 # 正規表現: Amazonリンクの検出
-AMAZON_URL_REGEX = r"(https?://(?:www\.)?amazon\.co\.jp\S*)"
+AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia)/[\w\-/\?=&%\.]+)"
 
 # ===============================
-# 関数部分
+# ヘルスチェック用HTTPサーバー
 # ===============================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b'OK')
 
+def run_health_check_server():
+    server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
+    print("Health check server is running on port 8000...")
+    server.serve_forever()
+
+# 別スレッドでHTTPサーバーを実行
+threading.Thread(target=run_health_check_server, daemon=True).start()
+
+# ===============================
 # Amazon署名付きリクエストの生成
+# ===============================
 def amazon_signed_request(asin):
     endpoint = "webservices.amazon.co.jp"
     uri = "/onca/xml"
@@ -46,7 +64,7 @@ def amazon_signed_request(asin):
 
 # ASINをURLから抽出
 def extract_asin(url):
-    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]+)", url)
+    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", url)
     return match.group(1) if match else None
 
 # Amazon PA-APIから商品情報を取得
@@ -98,16 +116,13 @@ async def on_message(message):
     sanitized_content = message.content.replace("\n", " ")  # 改行をスペースに置き換え
     print(f"Sanitized Content: {sanitized_content}")
 
-    # テスト: すべてのメッセージに反応
-    if sanitized_content:
-        await message.channel.send(f"受信しました: {sanitized_content}")
-
     urls = re.findall(AMAZON_URL_REGEX, sanitized_content)
     print(f"検出されたURL: {urls}")
 
     for url in urls:
         asin = extract_asin(url)
         if asin:
+            print(f"抽出されたASIN: {asin}")
             title, price, image_url = fetch_amazon_data(asin)
             if title and price and image_url:
                 associate_link = f"{url}?tag={AMAZON_ASSOCIATE_TAG}"
@@ -126,6 +141,7 @@ async def on_message(message):
                 # メッセージの直後に返信
                 await message.channel.send(embed=embed)
             else:
+                print("商品情報が取得できませんでした。")
                 await message.channel.send("商品情報を取得できませんでした。")
         else:
             print("ASINが抽出されませんでした。")
