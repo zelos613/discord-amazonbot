@@ -11,21 +11,22 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 
-# ダミーHTTPサーバー（Koyebのヘルスチェック用）
+# ===============================
+# ダミーHTTPサーバー (Koyebヘルスチェック用)
+# ===============================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header('Content-Type', 'text/plain')
         self.end_headers()
-        self.wfile.write(b'OK')  # Koyebのヘルスチェック用レスポンス
+        self.wfile.write(b'OK')  # ヘルスチェック用レスポンス
 
-# ヘルスチェックサーバーを別スレッドで実行
 def run_health_check_server():
     server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
     print("Health check server is running on port 8000...")
     server.serve_forever()
 
-# HTTPサーバーを別スレッドで起動
+# ヘルスチェックサーバーを別スレッドで実行
 threading.Thread(target=run_health_check_server, daemon=True).start()
 
 # ===============================
@@ -39,8 +40,7 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')  # Amazonアソシエ�
 BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')  # Bitly APIトークン
 
 # Amazonリンクの正規表現
-AMAZON_URL_REGEX = r"(https?://(www\.)?amazon\.co\.jp/[^\s]+|https?://amzn\.asia/[^\s]+)"
-
+AMAZON_URL_REGEX = r"(https?://(www\.)?amazon\.co\.jp/[\S]+|https?://amzn\.asia/[\S]+)"
 
 # ===============================
 # 関数部分
@@ -111,7 +111,6 @@ def fetch_amazon_data(asin):
 # ===============================
 # Discord Bot本体
 # ===============================
-
 intents = discord.Intents.default()
 intents.messages = True
 client = discord.Client(intents=intents)
@@ -119,25 +118,19 @@ client = discord.Client(intents=intents)
 @client.event
 async def on_ready():
     print(f'Botがログインしました: {client.user}')
-    # Botが正常に起動したサインとしてチャンネルにメッセージを送信
-    for guild in client.guilds:
-        for channel in guild.text_channels:
-            try:
-                await channel.send("Botが正常に起動しました！")
-                print(f"通知を送信しました: {channel.name}")
-                return  # 最初のチャンネルに通知を送信して終了
-            except Exception as e:
-                print(f"チャンネル送信エラー: {e}")
-
 
 @client.event
 async def on_message(message):
-    if message.author.bot:
+    # デバッグ: 受信メッセージと送信者を出力
+    print(f"受信者: {message.author}, メッセージ: {message.content}")
+    
+    if message.author.bot:  # Bot自身のメッセージを無視
+        print("Botメッセージのため無視")
         return
 
-    print(f"受信メッセージ: {message.content}")  # メッセージ内容を出力
+    # URLの検出
     urls = re.findall(AMAZON_URL_REGEX, message.content)
-    print(f"検出されたURL: {urls}")  # 検出されたURLを出力
+    print(f"検出されたURL: {urls}")
 
     for url in urls:
         # 短縮URLを展開
@@ -149,11 +142,10 @@ async def on_message(message):
         if asin:
             # Amazon PA-APIから商品情報取得
             title, price, image_url = fetch_amazon_data(asin)
+            print(f"取得した商品情報: タイトル={title}, 価格={price}, 画像URL={image_url}")
 
             # アソシエイトリンクを生成
             associate_link = f"{expanded_url}?tag={AMAZON_ASSOCIATE_TAG}"
-
-            # Bitlyでリンクを短縮
             short_url = shorten_url(associate_link)
             print(f"短縮リンク: {short_url}")
 
@@ -168,9 +160,11 @@ async def on_message(message):
                 embed.set_thumbnail(url=image_url)
             embed.set_footer(text="Botが情報をお届けしました！")
 
-            # 埋め込みメッセージを送信
+            # メッセージ送信
             await message.channel.send(embed=embed)
-
+            print("埋め込みメッセージを送信しました")
+        else:
+            print("ASINが抽出されませんでした")
 
 # Botを起動
 client.run(TOKEN)
