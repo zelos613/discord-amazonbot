@@ -11,5 +11,8 @@ COPY bot.py bot.py
 # 必要ライブラリをインストール
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ポート8000を公開（ヘルスチェック用）
+EXPOSE 8000
+
 # アプリケーション実行
 CMD ["python", "bot.py"]
