@@ -11,9 +11,6 @@ COPY bot.py bot.py
 # 必要ライブラリをインストール
 RUN pip install --no-cache-dir -r requirements.txt
 
-# boto3を直接インストール（冗長防止：requirementsで追加済みだが確認用）
-RUN pip install boto3
-
 # ポート8000を公開（ヘルスチェック用）
 EXPOSE 8000
 
