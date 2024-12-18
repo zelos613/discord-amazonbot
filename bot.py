@@ -40,7 +40,7 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')  # Amazonアソシエ�
 BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')  # Bitly APIトークン
 
 # Amazonリンクの正規表現
-AMAZON_URL_REGEX = r"(https?://(www\.)?amazon\.co\.jp/[\S]+|https?://amzn\.asia/[\S]+)"
+AMAZON_URL_REGEX = r"https?://(?:www\.)?amazon\.co\.jp/[^\s]+|https?://amzn\.asia/[^\s]+"
 
 # ===============================
 # 関数部分
@@ -137,7 +137,7 @@ async def on_message(message):
 
     # URLの検出
     urls = re.findall(AMAZON_URL_REGEX, message.content)
-    print(f"検出されたURL: {urls}")
+    print(f"検出されたURL: {urls}")  # 正しくURLが検出されるかデバッグ
 
     for url in urls:
         # 短縮URLを展開
