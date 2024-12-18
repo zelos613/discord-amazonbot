@@ -19,7 +19,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'text/plain')
         self.end_headers()
-        self.wfile.write(b'OK')  # ヘルスチェック用レスポンス
+        self.wfile.write(b'OK')
 
 def run_health_check_server():
     server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
@@ -33,14 +33,14 @@ threading.Thread(target=run_health_check_server, daemon=True).start()
 # 環境変数の読み込み
 # ===============================
 load_dotenv()
-TOKEN = os.getenv('TOKEN')  # Discord Botトークン
-AMAZON_ACCESS_KEY = os.getenv('AMAZON_ACCESS_KEY')  # Amazon PA-APIアクセスキー
-AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')  # Amazon PA-APIシークレットキー
-AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')  # Amazonアソシエイトタグ
-BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')  # Bitly APIトークン
+TOKEN = os.getenv('TOKEN')
+AMAZON_ACCESS_KEY = os.getenv('AMAZON_ACCESS_KEY')
+AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')
+AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
+BITLY_API_TOKEN = os.getenv('BITLY_API_TOKEN')
 
-# Amazonリンクの正規表現
-AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia)/[^\s]+)"
+# 正規表現: Amazonリンクの検出
+AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia)/\S+)"
 
 # ===============================
 # 関数部分
@@ -72,21 +72,6 @@ def expand_short_url(short_url):
     except requests.RequestException:
         return short_url
 
-# BitlyでURLを短縮
-def shorten_url(long_url):
-    try:
-        headers = {"Authorization": f"Bearer {BITLY_API_TOKEN}"}
-        data = {"long_url": long_url}
-        response = requests.post("https://api-ssl.bitly.com/v4/shorten", json=data, headers=headers)
-        if response.status_code == 200:
-            return response.json().get("link")
-        else:
-            print(f"Bitlyエラー: {response.status_code} - {response.text}")
-            return long_url
-    except Exception as e:
-        print(f"Bitly例外: {e}")
-        return long_url
-
 # ASINをURLから抽出
 def extract_asin(url):
     match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]+)", url)
@@ -108,6 +93,19 @@ def fetch_amazon_data(asin):
             print(f"XML解析エラー: {e}")
     return None, None, None
 
+# BitlyでURLを短縮
+def shorten_url(long_url):
+    try:
+        headers = {"Authorization": f"Bearer {BITLY_API_TOKEN}"}
+        data = {"long_url": long_url}
+        response = requests.post("https://api-ssl.bitly.com/v4/shorten", json=data, headers=headers)
+        if response.status_code == 200:
+            return response.json().get("link")
+        return long_url
+    except Exception as e:
+        print(f"Bitlyエラー: {e}")
+        return long_url
+
 # ===============================
 # Discord Bot本体
 # ===============================
@@ -121,49 +119,42 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    # デバッグ: 受信メッセージ内容の表示
-    print(f"受信者: {message.author}, メッセージ: {repr(message.content)}")
-    
-    if message.author.bot:  # Bot自身のメッセージを無視
-        return
+    if message.author.bot:
+        return  # Bot自身のメッセージは無視
 
-    # 改行をスペースに置き換え (URL検出用)
-    sanitized_content = message.content.replace("\n", " ")
+    print(f"受信者: {message.author}, メッセージ: {message.content!r}")
+    sanitized_content = message.content.replace("\n", " ")  # 改行をスペースに置き換え
 
-    # URLの検出
     urls = re.findall(AMAZON_URL_REGEX, sanitized_content)
-    if not urls:
-        print("URLが検出されませんでした。")
-        return
+    print(f"検出されたURL: {urls}")
 
     for url in urls:
-        # 短縮URLを展開
+        print(f"処理中のURL: {url}")
         expanded_url = expand_short_url(url)
         asin = extract_asin(expanded_url)
+        print(f"ASIN: {asin}")
 
         if asin:
-            # Amazon PA-APIから商品情報取得
             title, price, image_url = fetch_amazon_data(asin)
+            if title and price and image_url:
+                associate_link = f"{expanded_url}?tag={AMAZON_ASSOCIATE_TAG}"
+                short_url = shorten_url(associate_link)
 
-            # アソシエイトリンクを生成
-            associate_link = f"{expanded_url}?tag={AMAZON_ASSOCIATE_TAG}"
-            short_url = shorten_url(associate_link)
-
-            # 埋め込みメッセージの生成
-            embed = discord.Embed(
-                title=title or "Amazon商品リンク",
-                url=short_url,
-                description=f"**価格**: {price or '情報なし'}",
-                color=discord.Color.blue()
-            )
-            if image_url:
+                # 埋め込みメッセージを作成して送信
+                embed = discord.Embed(
+                    title=title,
+                    url=short_url,
+                    description=f"**価格**: {price}",
+                    color=discord.Color.blue()
+                )
                 embed.set_thumbnail(url=image_url)
-            embed.set_footer(text="Botが情報をお届けしました！")
-
-            await message.channel.send(embed=embed)
-            print("埋め込みメッセージを送信しました")
+                embed.set_footer(text="Botが情報をお届けしました！")
+                await message.channel.send(embed=embed)
+                print("埋め込みメッセージを送信しました")
+            else:
+                print("商品情報が取得できませんでした。")
         else:
-            print("ASINが抽出されませんでした")
+            print("ASINが抽出されませんでした。")
 
 # Botを起動
 client.run(TOKEN)
