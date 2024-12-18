@@ -75,19 +75,8 @@ def extract_asin(url):
         match = re.search(r"/(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
         if match:
             return match.group(1)
-
-        # HTML本体からリダイレクトURLを解析
-        print("ASINが見つからないためHTMLを解析します。")
-        soup = BeautifulSoup(response.text, "html.parser")
-        meta_tag = soup.find("meta", attrs={"http-equiv": "refresh"})
-        if meta_tag:
-            content = meta_tag["content"]
-            redirect_url = re.search(r'url=(.*)', content, re.IGNORECASE)
-            if redirect_url:
-                expanded_url = redirect_url.group(1)
-                print(f"HTML解析で取得したURL: {expanded_url}")
-                match = re.search(r"/(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
-                return match.group(1) if match else None
+        else:
+            print("ASINが見つかりませんでした。")
     except Exception as e:
         print(f"URL展開中にエラー: {e}")
     return None
@@ -104,6 +93,8 @@ def fetch_amazon_data(asin):
             price = root.find(".//ns:FormattedPrice", ns).text
             image_url = root.find(".//ns:LargeImage/ns:URL", ns).text
             return title, price, image_url
+        else:
+            print(f"Amazon APIリクエスト失敗: {response.status_code}")
     except Exception as e:
         print(f"エラー: {e}")
     return None, None, None
@@ -140,41 +131,41 @@ async def on_message(message):
     print(f"受信者: {message.author}, メッセージ: {message.content!r}")
 
     if not message.content:  # メッセージが空の場合
-        print("メッセージが空です。意図しない動作の可能性があります。")
         return
 
     sanitized_content = message.content.replace("\n", " ")  # 改行をスペースに置き換え
-    print(f"Sanitized Content: {sanitized_content}")
-
     urls = re.findall(AMAZON_URL_REGEX, sanitized_content)
-    print(f"検出されたURL: {urls}")
+
+    if not urls:
+        print("Amazonリンクが検出されませんでした。")
+        return
 
     for url in urls:
         asin = extract_asin(url)
-        if asin:
-            print(f"抽出されたASIN: {asin}")
-            title, price, image_url = fetch_amazon_data(asin)
-            if title and price and image_url:
-                associate_link = f"{url}?tag={AMAZON_ASSOCIATE_TAG}"
-                short_url = shorten_url(associate_link)  # URL短縮処理
+        if not asin:
+            print("ASINが抽出されませんでした。URL: {url}")
+            continue
 
-                # 埋め込みメッセージを作成
-                embed = discord.Embed(
-                    title=title,
-                    url=short_url,
-                    description=f"**価格**: {price}",
-                    color=discord.Color.blue()
-                )
-                embed.set_thumbnail(url=image_url)
-                embed.set_footer(text="こちらの商品情報をお届けしました！")
+        print(f"抽出されたASIN: {asin}")
+        title, price, image_url = fetch_amazon_data(asin)
 
-                # メッセージの直後に返信
-                await message.channel.send(embed=embed)
-            else:
-                print("商品情報が取得できませんでした。")
-                await message.channel.send("商品情報を取得できませんでした。")
+        if title and price and image_url:
+            associate_link = f"{url}?tag={AMAZON_ASSOCIATE_TAG}"
+            short_url = shorten_url(associate_link)
+
+            embed = discord.Embed(
+                title=title,
+                url=short_url,
+                description=f"**価格**: {price}",
+                color=discord.Color.blue()
+            )
+            embed.set_thumbnail(url=image_url)
+            embed.set_footer(text="こちらの商品情報をお届けしました！")
+
+            await message.channel.send(embed=embed)
         else:
-            print("ASINが抽出されませんでした。")
+            print("商品情報が取得できませんでした。")
+            await message.channel.send("商品情報を取得できませんでした。")
 
 # Botを起動
 client.run(TOKEN)
