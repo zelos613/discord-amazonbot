@@ -128,18 +128,17 @@ async def on_message(message):
         print("Botメッセージのため無視")
         return
 
-    
-    # 正規表現のテスト
-    test_urls = ["https://www.amazon.co.jp/dp/B07NZZZ746", "https://amzn.asia/d/7ofjjGq"]
-    for test_url in test_urls:
-        match = re.findall(AMAZON_URL_REGEX, test_url)
-        print(f"テストURL: {test_url}, マッチ結果: {match}")
-
     # URLの検出
     urls = re.findall(AMAZON_URL_REGEX, message.content)
-    print(f"検出されたURL: {urls}")  # 正しくURLが検出されるかデバッグ
+    print(f"検出されたURL: {urls} (型: {type(urls)})")  # 正しくURLが検出されるかデバッグ
+
+    if not urls:  # 空の場合の確認
+        print("URLの検出に失敗しました")
+        return
 
     for url in urls:
+        print(f"処理中のURL: {url}")  # 確認用出力
+
         # 短縮URLを展開
         expanded_url = expand_short_url(url)
         print(f"展開されたURL: {expanded_url}")
@@ -172,6 +171,7 @@ async def on_message(message):
             print("埋め込みメッセージを送信しました")
         else:
             print("ASINが抽出されませんでした")
+
 
 # Botを起動
 client.run(TOKEN)
