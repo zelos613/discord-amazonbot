@@ -67,6 +67,7 @@ def amazon_signed_request(asin):
 def extract_asin(url):
     try:
         # 短縮URLを展開
+        print(f"元のURL: {url}")
         response = requests.get(url, allow_redirects=True)
         expanded_url = response.url
         print(f"展開されたURL: {expanded_url}")
@@ -74,6 +75,7 @@ def extract_asin(url):
         # ASIN抽出
         match = re.search(r"/(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
         if match:
+            print(f"抽出されたASIN: {match.group(1)}")
             return match.group(1)
         else:
             print("ASINが見つかりませんでした。")
@@ -81,23 +83,40 @@ def extract_asin(url):
         print(f"URL展開中にエラー: {e}")
     return None
 
+
 # Amazon PA-APIから商品情報を取得
 def fetch_amazon_data(asin):
     try:
         url = amazon_signed_request(asin)
+        print(f"Amazon APIリクエストURL: {url}")
         response = requests.get(url)
+
+        print(f"Amazon APIステータスコード: {response.status_code}")
+        print(f"Amazon APIレスポンス内容: {response.text}")
+
         if response.status_code == 200:
             root = ET.fromstring(response.content)
             ns = {"ns": "http://webservices.amazon.com/AWSECommerceService/2011-08-01"}
-            title = root.find(".//ns:Title", ns).text
-            price = root.find(".//ns:FormattedPrice", ns).text
-            image_url = root.find(".//ns:LargeImage/ns:URL", ns).text
-            return title, price, image_url
+            title = root.find(".//ns:Title", ns)
+            price = root.find(".//ns:FormattedPrice", ns)
+            image_url = root.find(".//ns:LargeImage/ns:URL", ns)
+
+            # 各値がNoneでないかチェック
+            title_text = title.text if title is not None else "N/A"
+            price_text = price.text if price is not None else "N/A"
+            image_url_text = image_url.text if image_url is not None else "N/A"
+
+            print(f"取得した商品タイトル: {title_text}")
+            print(f"取得した価格: {price_text}")
+            print(f"取得した画像URL: {image_url_text}")
+
+            return title_text, price_text, image_url_text
         else:
             print(f"Amazon APIリクエスト失敗: {response.status_code}")
     except Exception as e:
         print(f"エラー: {e}")
     return None, None, None
+
 
 # BitlyでURLを短縮
 def shorten_url(long_url):
@@ -136,22 +155,27 @@ async def on_message(message):
     sanitized_content = message.content.replace("\n", " ")  # 改行をスペースに置き換え
     urls = re.findall(AMAZON_URL_REGEX, sanitized_content)
 
+    print(f"検出されたURL: {urls}")
+
     if not urls:
         print("Amazonリンクが検出されませんでした。")
         return
 
     for url in urls:
         asin = extract_asin(url)
+        print(f"処理するURL: {url}, 抽出されたASIN: {asin}")
+
         if not asin:
-            print("ASINが抽出されませんでした。URL: {url}")
+            await message.channel.send("ASINが抽出できませんでした。")
             continue
 
-        print(f"抽出されたASIN: {asin}")
         title, price, image_url = fetch_amazon_data(asin)
+        print(f"取得した商品情報: タイトル={title}, 価格={price}, 画像URL={image_url}")
 
         if title and price and image_url:
             associate_link = f"{url}?tag={AMAZON_ASSOCIATE_TAG}"
             short_url = shorten_url(associate_link)
+            print(f"アソシエイトリンク: {short_url}")
 
             embed = discord.Embed(
                 title=title,
@@ -166,6 +190,7 @@ async def on_message(message):
         else:
             print("商品情報が取得できませんでした。")
             await message.channel.send("商品情報を取得できませんでした。")
+
 
 # Botを起動
 client.run(TOKEN)
