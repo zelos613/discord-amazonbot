@@ -118,9 +118,16 @@ client = discord.Client(intents=intents)
 @client.event
 async def on_ready():
     print(f'Botがログインしました: {client.user}')
-    print("ボットは現在、以下のサーバーで稼働しています:")
+    # Botが正常に起動したサインとしてチャンネルにメッセージを送信
     for guild in client.guilds:
-        print(f"- {guild.name} (ID: {guild.id})")
+        for channel in guild.text_channels:
+            try:
+                await channel.send("Botが正常に起動しました！")
+                print(f"通知を送信しました: {channel.name}")
+                return  # 最初のチャンネルに通知を送信して終了
+            except Exception as e:
+                print(f"チャンネル送信エラー: {e}")
+
 
 @client.event
 async def on_message(message):
