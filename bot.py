@@ -116,11 +116,11 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 @client.event
-def on_ready():
+async def on_ready():
     print(f'Botがログインしました: {client.user}')
 
 @client.event
-def on_message(message):
+async def on_message(message):
     if message.author.bot:
         return
 
