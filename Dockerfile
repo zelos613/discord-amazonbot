@@ -13,7 +13,8 @@ COPY paapi5-python-sdk/ paapi5-python-sdk/
 RUN pip install --no-cache-dir -r requirements.txt
 
 # PYTHONPATHを設定
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/paapi5-python-sdk:/app
+
 
 # ポート8000を公開（ヘルスチェック用）
 EXPOSE 8000
