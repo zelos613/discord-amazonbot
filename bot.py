@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from flask import Flask
 import threading
 import logging
+import asyncio
 
 # ===============================
 # ログ設定
@@ -29,6 +30,7 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 
 # Amazonリンクの正規表現
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.to|amzn\.asia)/[\w\-/\?=&%\.]+)"
+TIMEOUT = 10  # タイムアウト時間
 
 # ===============================
 # AWS署名の生成
@@ -78,7 +80,7 @@ def generate_aws_signature(payload):
     return headers, endpoint
 
 # ===============================
-# 商品情報取得
+# Amazon商品情報を取得
 # ===============================
 def fetch_amazon_data(asin):
     payload = json.dumps({
@@ -106,17 +108,14 @@ def fetch_amazon_data(asin):
     return None, None, None
 
 # ===============================
-# 短縮URLを展開
+# 短縮URLの展開
 # ===============================
 def resolve_short_url(url):
-    """短縮URLを展開する"""
     try:
-        # HEADリクエストを試行
-        response = requests.head(url, allow_redirects=True, timeout=5)
-        if response.status_code == 404 or response.is_redirect is False:
-            # GETリクエストにフォールバック
-            response = requests.get(url, allow_redirects=True, timeout=5)
-        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, allow_redirects=True, timeout=TIMEOUT, headers=headers)
         expanded_url = response.url
         logger.debug(f"短縮URL展開: {url} -> {expanded_url}")
         return expanded_url
@@ -130,11 +129,10 @@ def resolve_short_url(url):
 def extract_asin(url):
     """URLからASINを抽出する"""
     try:
-        # 短縮URLの場合、展開
-        if "amzn.asia" in url or "amzn.to" in url:
-            url = resolve_short_url(url)
-            if not url:
-                return None
+        # 短縮URLを展開
+        url = resolve_short_url(url)
+        if not url:
+            return None
         
         # AmazonリンクからASINを抽出
         parsed_url = urlparse(url)
