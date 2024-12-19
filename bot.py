@@ -94,8 +94,13 @@ def fetch_amazon_data(asin):
             "PartnerType": "Associates",
             "Marketplace": "www.amazon.co.jp"
         })
+        print(f"リクエストペイロード: {payload}")  # ペイロード内容を出力
         headers, endpoint = generate_aws_signature(payload)
+        print(f"生成されたリクエストヘッダー: {headers}")  # ヘッダー内容を出力
         response = requests.post(endpoint, headers=headers, data=payload)
+        print(f"APIレスポンスコード: {response.status_code}")  # ステータスコードを出力
+        print(f"APIレスポンス内容: {response.text}")  # レスポンス内容を出力
+
         if response.status_code == 200:
             data = response.json()
             if "ItemsResult" in data and "Items" in data["ItemsResult"]:
@@ -104,6 +109,10 @@ def fetch_amazon_data(asin):
                 price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"]
                 image_url = item["Images"]["Primary"]["Large"]["URL"]
                 return title, price, image_url
+            else:
+                print(f"レスポンス構造が予期しない形式です: {data}")  # 構造エラー時
+        else:
+            print(f"エラー応答: {response.text}")  # APIエラー時
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
     return None, None, None
@@ -114,13 +123,18 @@ def fetch_amazon_data(asin):
 def extract_asin(url):
     try:
         parsed_url = urlparse(url)
+        print(f"解析されたURL: {parsed_url}")  # 解析されたURL情報
         if "amzn.asia" in parsed_url.netloc or "amzn.to" in parsed_url.netloc:
-            return url.split("/")[-1]
+            asin = url.split("/")[-1]
+            print(f"短縮URLから抽出されたASIN: {asin}")
+            return asin
         elif "amazon.co.jp" in parsed_url.netloc:
             path_parts = parsed_url.path.split("/")
             for part in path_parts:
                 if len(part) == 10 and part.isalnum():
+                    print(f"完全URLから抽出されたASIN: {part}")
                     return part
+        print("ASINが抽出できませんでした。")
         return None
     except Exception as e:
         print(f"ASIN抽出エラー: {e}")
