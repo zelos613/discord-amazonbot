@@ -59,15 +59,15 @@ def get_amazon_product_info_via_api(asin):
         api = DefaultApi(
             access_key=AMAZON_ACCESS_KEY,
             secret_key=AMAZON_SECRET_KEY,
-            host="webservices.amazon.co.jp",
-            region="us-west-2"
+            host="webservices.amazon.de",  # ドイツのAmazonマーケットプレイスに変更
+            region="eu-west-1"
         )
 
         # リクエストの作成
         request = GetItemsRequest(
             partner_tag=AFFILIATE_ID,
             partner_type="Associates",
-            marketplace="www.amazon.co.jp",
+            marketplace="www.amazon.de",
             item_ids=[asin],
             resources=[
                 GetItemsResource.ITEM_INFO_TITLE,
