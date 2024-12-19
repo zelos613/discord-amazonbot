@@ -100,6 +100,7 @@ def get_amazon_product_info_via_api(asin):
         return None
 
 
+
 # ASINを抽出する関数
 def extract_asin(url):
     try:
@@ -130,7 +131,7 @@ async def on_message(message):
     if message.author.bot:
         return
     urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
-    amazon_urls = [url for url in urls if re.search(r"amazon\.com|amazon\.co\.jp|amzn\.asia", url)]
+    amazon_urls = [url for url in urls if re.search(r"amazon\\.com|amazon\\.co\\.jp|amzn\\.asia", url)]
     if not amazon_urls:
         return
     url = amazon_urls[0]
@@ -157,7 +158,7 @@ async def on_message(message):
         if product_info:
             embed = discord.Embed(
                 title=product_info["title"],
-                url=url,
+                url=affiliate_link,
                 description="商品情報を整理しました✨️",
                 color=0x00ff00
             )
@@ -170,6 +171,7 @@ async def on_message(message):
     except Exception as e:
         print(f"Error: {e}")
         await channel.send("エラー：予期せぬ問題が発生しました")
+
 
 # Botの起動
 bot.run(TOKEN)
