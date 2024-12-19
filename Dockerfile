@@ -7,7 +7,7 @@ WORKDIR /app
 # 必要ファイルをコピー
 COPY requirements.txt requirements.txt
 COPY bot.py bot.py
-COPY paapi5-python-sdk/ ./paapi5-python-sdk/
+COPY ./paapi5_python_sdk /app/paapi5_python_sdk
 
 # 必要ライブラリをインストール
 RUN pip install --no-cache-dir -r requirements.txt
