@@ -9,6 +9,8 @@ from paapi5_python_sdk.models.get_items_resource import GetItemsResource
 from paapi5_python_sdk.configuration import Configuration
 from paapi5_python_sdk.api_client import ApiClient
 from dotenv import load_dotenv
+from flask import Flask
+import threading
 
 # ===============================
 # 環境変数の読み込み
@@ -25,16 +27,12 @@ AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/
 # ===============================
 # PA-APIの設定
 # ===============================
-# PA-APIの設定
 config = Configuration()
-api_client = ApiClient(
-    access_key=AMAZON_ACCESS_KEY,
-    secret_key=AMAZON_SECRET_KEY,
-    host="webservices.amazon.co.jp",
-    region="us-east-1"  # 必要に応じて適切なリージョンを指定
-)
+config.access_key = AMAZON_ACCESS_KEY
+config.secret_key = AMAZON_SECRET_KEY
+config.host = "webservices.amazon.co.jp"
+api_client = ApiClient(config)
 api = DefaultApi(api_client)
-
 
 # ===============================
 # ASINの抽出
@@ -124,5 +122,22 @@ async def on_message(message):
             await message.channel.send(embed=embed)
         else:
             await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
+
+# ===============================
+# HTTPサーバーのセットアップ
+# ===============================
+app = Flask(__name__)
+
+@app.route("/")
+def health_check():
+    return "OK", 200
+
+def run_http_server():
+    app.run(host="0.0.0.0", port=8000)
+
+# HTTPサーバーをバックグラウンドで実行
+http_thread = threading.Thread(target=run_http_server)
+http_thread.daemon = True
+http_thread.start()
 
 client.run(TOKEN)
