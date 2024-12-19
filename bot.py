@@ -33,7 +33,7 @@ AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY")
 AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY")
 PROXY_HTTP = os.getenv("PROXY_HTTP")
 PROXY_HTTPS = os.getenv("PROXY_HTTPS")
-TIMEOUT = 20  # タイムアウト時間（秒）を延長
+TIMEOUT = 20  # タイムアウト時間（秒）
 
 # プロキシ設定
 proxies = {
@@ -67,7 +67,7 @@ def get_amazon_product_info_via_api(asin):
         api = DefaultApi(
             access_key=AMAZON_ACCESS_KEY,
             secret_key=AMAZON_SECRET_KEY,
-            host="webservices.amazon.co.jp",  # 日本のAmazonマーケットプレイスに変更
+            host="webservices.amazon.co.jp",
             region="us-west-2"
         )
 
@@ -85,7 +85,7 @@ def get_amazon_product_info_via_api(asin):
         )
 
         # リクエスト送信
-        print("Sending request to Amazon PA-API via proxy...")
+        print(f"Sending request to Amazon PA-API. ASIN: {asin}")
         response = api.get_items(request, proxies=proxies)
 
         # デバッグ出力
@@ -130,7 +130,6 @@ def extract_asin(url):
             print(f"Extracted ASIN from redirected URL: {asin_match.group(1)}")
             return asin_match.group(1)
 
-        # それ以外の場合ASINを抽出できない
         print("ASIN not found in URL")
         return None
     except Exception as e:
@@ -143,7 +142,7 @@ async def on_message(message):
     if message.author.bot:
         return
     urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
-    amazon_urls = [url for url in urls if re.search(r"amazon\.com|amazon\.co\.jp|amzn\.asia", url)]
+    amazon_urls = [url for url in urls if re.search(r"amazon\\.com|amazon\\.co\\.jp|amzn\\.asia", url)]
     if not amazon_urls:
         return
     url = amazon_urls[0]
@@ -152,7 +151,6 @@ async def on_message(message):
         # ASINを抽出
         asin = extract_asin(url)
 
-        # デバッグ出力
         print(f"Extracted ASIN: {asin}")
         print(f"URL: {url}")
 
