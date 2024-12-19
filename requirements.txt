@@ -3,4 +3,4 @@ requests
 boto3
 Flask
 python-dotenv
-python-amazon-paapi
+beautifulsoup4
