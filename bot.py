@@ -31,7 +31,15 @@ TOKEN = os.getenv("TOKEN")
 AFFILIATE_ID = os.getenv("AMAZON_ASSOCIATE_TAG")
 AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY")
 AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY")
+PROXY_HTTP = os.getenv("PROXY_HTTP")
+PROXY_HTTPS = os.getenv("PROXY_HTTPS")
 TIMEOUT = 10  # タイムアウト時間（秒）
+
+# プロキシ設定
+proxies = {
+    "http": PROXY_HTTP,
+    "https": PROXY_HTTPS
+}
 
 # Discord Botの準備
 intents = discord.Intents.default()
@@ -59,15 +67,15 @@ def get_amazon_product_info_via_api(asin):
         api = DefaultApi(
             access_key=AMAZON_ACCESS_KEY,
             secret_key=AMAZON_SECRET_KEY,
-            host="webservices.amazon.de",  # ドイツのAmazonマーケットプレイスに変更
-            region="eu-west-1"
+            host="webservices.amazon.co.jp",  # 日本のAmazonマーケットプレイスに変更
+            region="us-west-2"
         )
 
         # リクエストの作成
         request = GetItemsRequest(
             partner_tag=AFFILIATE_ID,
             partner_type="Associates",
-            marketplace="www.amazon.de",
+            marketplace="www.amazon.co.jp",
             item_ids=[asin],
             resources=[
                 GetItemsResource.ITEM_INFO_TITLE,
@@ -77,8 +85,8 @@ def get_amazon_product_info_via_api(asin):
         )
 
         # リクエスト送信
-        print("Sending request to Amazon PA-API...")
-        response = api.get_items(request)
+        print("Sending request to Amazon PA-API via proxy...")
+        response = api.get_items(request, proxies=proxies)
 
         # デバッグ出力
         print("=== API Debug Information ===")
@@ -113,7 +121,7 @@ def extract_asin(url):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        response = requests.get(url, headers=headers, allow_redirects=True, timeout=TIMEOUT)
+        response = requests.get(url, headers=headers, allow_redirects=True, timeout=TIMEOUT, proxies=proxies)
         redirect_url = response.url
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", redirect_url)
         if asin_match:
