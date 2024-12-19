@@ -2,7 +2,7 @@ import os
 import discord
 from discord.ext import commands
 import re
-import asyncio
+import requests
 from flask import Flask
 import threading
 from paapi5_python_sdk.api.default_api import DefaultApi
@@ -48,7 +48,8 @@ def convert_amazon_link(url):
         else:
             affiliate_link = f"{url}?tag={AFFILIATE_ID}"
         return affiliate_link
-    except Exception:
+    except Exception as e:
+        print(f"Error converting link: {e}")
         return None
 
 # Amazon PA-APIを使った商品情報取得
@@ -76,6 +77,7 @@ def get_amazon_product_info_via_api(asin):
         )
 
         # リクエスト送信
+        print("Sending request to Amazon PA-API...")
         response = api.get_items(request)
 
         # デバッグ出力
@@ -98,8 +100,6 @@ def get_amazon_product_info_via_api(asin):
     except Exception as e:
         print(f"Error fetching product info via PA-API: {e}")
         return None
-
-
 
 # ASINを抽出する関数
 def extract_asin(url):
@@ -131,7 +131,7 @@ async def on_message(message):
     if message.author.bot:
         return
     urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
-    amazon_urls = [url for url in urls if re.search(r"amazon\\.com|amazon\\.co\\.jp|amzn\\.asia", url)]
+    amazon_urls = [url for url in urls if re.search(r"amazon\.com|amazon\.co\.jp|amzn\.asia", url)]
     if not amazon_urls:
         return
     url = amazon_urls[0]
@@ -171,7 +171,6 @@ async def on_message(message):
     except Exception as e:
         print(f"Error: {e}")
         await channel.send("エラー：予期せぬ問題が発生しました")
-
 
 # Botの起動
 bot.run(TOKEN)
