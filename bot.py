@@ -6,7 +6,7 @@ import json
 import hmac
 import hashlib
 from datetime import datetime
-from urllib.parse import quote, urlparse, parse_qs
+from urllib.parse import quote, urlparse
 from dotenv import load_dotenv
 from flask import Flask
 import threading
@@ -33,20 +33,17 @@ def generate_aws_signature(payload):
     region = "us-west-2"
     endpoint = f"https://{host}/paapi5/getitems"
     content_type = "application/json; charset=UTF-8"
-    
-    # 日付情報
+
     now = datetime.utcnow()
     amz_date = now.strftime("%Y%m%dT%H%M%SZ")
     date_stamp = now.strftime("%Y%m%d")
 
-    # 必須ヘッダー
     headers = {
         "content-type": content_type,
         "host": host,
         "x-amz-date": amz_date,
     }
 
-    # Canonicalリクエスト
     canonical_uri = "/paapi5/getitems"
     canonical_querystring = ""
     canonical_headers = ''.join([f"{k}:{v}\n" for k, v in headers.items()])
@@ -55,13 +52,11 @@ def generate_aws_signature(payload):
     canonical_request = (f"{method}\n{canonical_uri}\n{canonical_querystring}\n"
                          f"{canonical_headers}\n{signed_headers}\n{payload_hash}")
 
-    # String to Sign
     algorithm = "AWS4-HMAC-SHA256"
     credential_scope = f"{date_stamp}/{region}/{service}/aws4_request"
     string_to_sign = (f"{algorithm}\n{amz_date}\n{credential_scope}\n"
                       f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}")
 
-    # 署名の計算
     def sign(key, msg):
         return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
 
@@ -71,7 +66,6 @@ def generate_aws_signature(payload):
     k_signing = sign(k_service, "aws4_request")
     signature = hmac.new(k_signing, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
 
-    # Authorizationヘッダー
     authorization_header = (f"{algorithm} Credential={AMAZON_ACCESS_KEY}/{credential_scope}, "
                              f"SignedHeaders={signed_headers}, Signature={signature}")
     headers["Authorization"] = authorization_header
@@ -83,6 +77,7 @@ def generate_aws_signature(payload):
 # ===============================
 def fetch_amazon_data(asin):
     try:
+        print(f"ASINを受け取りました: {asin}")
         payload = json.dumps({
             "ItemIds": [asin],
             "Resources": [
@@ -94,12 +89,14 @@ def fetch_amazon_data(asin):
             "PartnerType": "Associates",
             "Marketplace": "www.amazon.co.jp"
         })
-        print(f"リクエストペイロード: {payload}")  # ペイロード内容を出力
+        print(f"リクエストペイロード: {payload}")
         headers, endpoint = generate_aws_signature(payload)
-        print(f"生成されたリクエストヘッダー: {headers}")  # ヘッダー内容を出力
+        print(f"リクエストヘッダー: {headers}")
+        print(f"リクエストエンドポイント: {endpoint}")
+
         response = requests.post(endpoint, headers=headers, data=payload)
-        print(f"APIレスポンスコード: {response.status_code}")  # ステータスコードを出力
-        print(f"APIレスポンス内容: {response.text}")  # レスポンス内容を出力
+        print(f"Amazon APIレスポンスコード: {response.status_code}")
+        print(f"Amazon APIレスポンス: {response.text}")
 
         if response.status_code == 200:
             data = response.json()
@@ -108,11 +105,12 @@ def fetch_amazon_data(asin):
                 title = item["ItemInfo"]["Title"]["DisplayValue"]
                 price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"]
                 image_url = item["Images"]["Primary"]["Large"]["URL"]
+                print(f"取得成功: タイトル={title}, 価格={price}, 画像URL={image_url}")
                 return title, price, image_url
             else:
-                print(f"レスポンス構造が予期しない形式です: {data}")  # 構造エラー時
+                print("ItemsResultまたはItemsが存在しません。")
         else:
-            print(f"エラー応答: {response.text}")  # APIエラー時
+            print(f"Amazon APIエラー: ステータスコード={response.status_code}, 内容={response.text}")
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
     return None, None, None
@@ -123,18 +121,13 @@ def fetch_amazon_data(asin):
 def extract_asin(url):
     try:
         parsed_url = urlparse(url)
-        print(f"解析されたURL: {parsed_url}")  # 解析されたURL情報
         if "amzn.asia" in parsed_url.netloc or "amzn.to" in parsed_url.netloc:
-            asin = url.split("/")[-1]
-            print(f"短縮URLから抽出されたASIN: {asin}")
-            return asin
+            return url.split("/")[-1]
         elif "amazon.co.jp" in parsed_url.netloc:
             path_parts = parsed_url.path.split("/")
             for part in path_parts:
                 if len(part) == 10 and part.isalnum():
-                    print(f"完全URLから抽出されたASIN: {part}")
                     return part
-        print("ASINが抽出できませんでした。")
         return None
     except Exception as e:
         print(f"ASIN抽出エラー: {e}")
@@ -153,32 +146,36 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    if message.author.bot:
-        return
+    try:
+        if message.author.bot:
+            return
 
-    urls = re.findall(AMAZON_URL_REGEX, message.content)
-    if not urls:
-        return
+        urls = re.findall(AMAZON_URL_REGEX, message.content)
+        if not urls:
+            return
 
-    for url in urls:
-        await message.channel.send("リンクを確認中です...🔍")
-        asin = extract_asin(url)
-        if not asin:
-            await message.channel.send("ASINが取得できませんでした。❌")
-            continue
+        for url in urls:
+            await message.channel.send("リンクを確認中です...🔍")
+            asin = extract_asin(url)
+            print(f"抽出されたASIN: {asin}")
+            if not asin:
+                await message.channel.send("ASINが取得できませんでした。❌")
+                continue
 
-        title, price, image_url = fetch_amazon_data(asin)
-        if title and price and image_url:
-            embed = discord.Embed(
-                title=title,
-                url=url,
-                description=f"**価格**: {price}\n\n商品情報を整理しました！✨",
-                color=discord.Color.blue()
-            )
-            embed.set_thumbnail(url=image_url)
-            await message.channel.send(embed=embed)
-        else:
-            await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
+            title, price, image_url = fetch_amazon_data(asin)
+            if title and price and image_url:
+                embed = discord.Embed(
+                    title=title,
+                    url=url,
+                    description=f"**価格**: {price}\n\n商品情報を整理しました！✨",
+                    color=discord.Color.blue()
+                )
+                embed.set_thumbnail(url=image_url)
+                await message.channel.send(embed=embed)
+            else:
+                await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
+    except Exception as e:
+        print(f"on_message処理エラー: {e}")
 
 # ===============================
 # HTTPサーバーのセットアップ
