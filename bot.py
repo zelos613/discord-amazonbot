@@ -3,10 +3,10 @@ import discord
 from discord.ext import commands
 import re
 import requests
+from bs4 import BeautifulSoup
 import asyncio
 from flask import Flask
 import threading
-from amazon.paapi import AmazonAPI  # PA-APIライブラリを使用
 
 # ===============================
 # HTTPサーバーのセットアップ
@@ -28,12 +28,7 @@ http_thread.start()
 # 設定
 TOKEN = os.getenv("TOKEN")
 AFFILIATE_ID = os.getenv("AMAZON_ASSOCIATE_TAG")
-AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY")
-AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY")
 TIMEOUT = 10  # タイムアウト時間（秒）
-
-# AmazonAPIインスタンス作成
-amazon = AmazonAPI(AMAZON_ACCESS_KEY, AMAZON_SECRET_KEY, AFFILIATE_ID, "JP")
 
 # Discord Botの準備
 intents = discord.Intents.default()
@@ -63,22 +58,28 @@ def convert_amazon_link(url):
 # Amazon商品情報を取得する関数
 def get_amazon_product_info(affiliate_link):
     try:
-        # 商品ID（ASIN）をURLから抽出
-        asin_match = re.search(r"/dp/([A-Z0-9]{10})", affiliate_link)
-        if not asin_match:
-            return None
-        asin = asin_match.group(1)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(affiliate_link, headers=headers, timeout=TIMEOUT)
+        soup = BeautifulSoup(response.content, "html.parser")
 
-        # PA-APIで商品情報を取得
-        product = amazon.get_items(asin)
-        if not product or not product.items:
-            return None
+        # 商品名を取得
+        title = soup.find(id="productTitle")
+        title = title.get_text(strip=True) if title else "商品名が取得できません"
 
-        item = product.items[0]
+        # 価格を取得
+        price = soup.find("span", {"class": "a-price-whole"})
+        price = f"￥{price.get_text(strip=True)}" if price else "価格情報なし"
+
+        # 画像URLを取得
+        image = soup.find("img", {"id": "landingImage"})
+        image_url = image["src"] if image else ""
+
         return {
-            "title": item.title,
-            "price": item.prices.price.value if item.prices.price else "価格情報なし",
-            "image_url": item.images.primary.large.url if item.images and item.images.primary else "",
+            "title": title,
+            "price": price,
+            "image_url": image_url,
             "link": affiliate_link
         }
     except Exception as e:
