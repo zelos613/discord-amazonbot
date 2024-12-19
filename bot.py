@@ -2,11 +2,12 @@ import os
 import discord
 import json
 import requests
+import threading
+from flask import Flask
 from discord.ext import commands
 from datetime import datetime
 import hmac
 import hashlib
-import base64
 
 # 環境変数から設定を読み込み
 TOKEN = os.getenv('TOKEN')
@@ -21,6 +22,20 @@ URI_PATH = "/paapi5/searchitems"
 intents = discord.Intents.default()
 intents.messages = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Flaskを使用してHTTPサーバーをセットアップ
+app = Flask(__name__)
+
+@app.route("/")
+def health_check():
+    return "OK", 200
+
+def run_http_server():
+    app.run(host="0.0.0.0", port=8000)
+
+http_thread = threading.Thread(target=run_http_server)
+http_thread.daemon = True
+http_thread.start()
 
 # AWS署名を生成する関数
 def generate_signature(request_payload):
@@ -82,8 +97,7 @@ async def on_ready():
 @bot.event
 async def on_message(message):
     if "amazon.co.jp" in message.content and not message.author.bot:
-        # Amazonリンクを検知してキーワード抽出
-        keywords = "検出したキーワード"  # ここをリンクからの抽出に変更
+        keywords = "検出したキーワード"  # キーワード抽出ロジックを追加
         product_data = fetch_amazon_product(keywords)
 
         if product_data.get("SearchResult", {}).get("Items"):
@@ -95,6 +109,7 @@ async def on_message(message):
                 color=0x00ff00
             )
             embed.set_thumbnail(url=item["Images"]["Primary"]["Medium"]["URL"])
+            await message.channel.send("商品情報を整理しました✨️")
             await message.channel.send(embed=embed)
         else:
             await message.channel.send("商品が見つかりませんでした。")
