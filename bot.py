@@ -92,7 +92,7 @@ def fetch_amazon_data(asin):
         "Marketplace": "www.amazon.co.jp"
     })
     headers, endpoint = generate_aws_signature(payload)
-    
+
     logger.debug(f"Amazon PA-APIリクエストペイロード: {payload}")
     logger.debug(f"Amazon PA-APIリクエストヘッダー: {headers}")
 
@@ -108,14 +108,13 @@ def fetch_amazon_data(asin):
         if "ItemsResult" in data and "Items" in data["ItemsResult"]:
             item = data["ItemsResult"]["Items"][0]
             title = item.get("ItemInfo", {}).get("Title", {}).get("DisplayValue", "タイトルなし")
-            price = item.get("Offers", {}).get("Listings", [{}])[0].get("Price", {}).get("DisplayAmount", "価格情報なし")
-            image_url = item.get("Images", {}).get("Primary", {}).get("Large", {}).get("URL", None)
-            return title, price, image_url
+            return title, None, None
         else:
             logger.error("商品情報がレスポンスに含まれていません。")
     except Exception as e:
         logger.error(f"レスポンス解析エラー: {e}")
     return None, None, None
+
 
 
 
