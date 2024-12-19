@@ -2,3 +2,4 @@ discord.py
 requests
 boto3
 Flask
+python-dotenv
