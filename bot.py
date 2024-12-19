@@ -98,6 +98,20 @@ def fetch_amazon_data(asin):
         logger.error(f"PA-APIエラー: ステータスコード={response.status_code}, レスポンス={response.text}")
         return None, None, None
 
+    try:
+        data = response.json()
+        logger.debug(f"PA-APIレスポンス: {data}")
+        if "ItemsResult" in data and "Items" in data["ItemsResult"]:
+            item = data["ItemsResult"]["Items"][0]
+            title = item["ItemInfo"]["Title"]["DisplayValue"] if "ItemInfo" in item and "Title" in item["ItemInfo"] else "タイトルなし"
+            return title, None, None
+        else:
+            logger.error("商品情報がレスポンスに含まれていません。")
+    except Exception as e:
+        logger.error(f"レスポンス解析エラー: {e}")
+    return None, None, None
+
+
     data = response.json()
     logger.debug(f"PA-APIレスポンス: {data}")
 
