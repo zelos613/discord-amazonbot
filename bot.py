@@ -27,12 +27,15 @@ AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/
 # ===============================
 # PA-APIの設定
 # ===============================
-config = Configuration()
-config.access_key = AMAZON_ACCESS_KEY
-config.secret_key = AMAZON_SECRET_KEY
-config.host = "webservices.amazon.co.jp"
+config = Configuration(
+    access_key=AMAZON_ACCESS_KEY,
+    secret_key=AMAZON_SECRET_KEY,
+    host="webservices.amazon.co.jp",
+    region="JP"  # 日本向け
+)
 api_client = ApiClient(config)
 api = DefaultApi(api_client)
+
 
 # ===============================
 # ASINの抽出
