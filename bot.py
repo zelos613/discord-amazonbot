@@ -106,15 +106,41 @@ def fetch_amazon_data(asin):
     return None, None, None
 
 # ===============================
+# 短縮URLを展開
+# ===============================
+def resolve_short_url(url):
+    """短縮URLを展開する"""
+    try:
+        response = requests.head(url, allow_redirects=True)
+        expanded_url = response.url
+        logger.debug(f"短縮URL展開: {url} -> {expanded_url}")
+        return expanded_url
+    except Exception as e:
+        logger.error(f"短縮URLの展開に失敗しました: {e}")
+        return None
+
+# ===============================
 # ASINを抽出
 # ===============================
 def extract_asin(url):
-    parsed_url = urlparse(url)
-    path_parts = parsed_url.path.split("/")
-    for part in path_parts:
-        if len(part) == 10 and part.isalnum():
-            return part
-    return None
+    """URLからASINを抽出する"""
+    try:
+        # 短縮URLの場合、展開
+        if "amzn.asia" in url or "amzn.to" in url:
+            url = resolve_short_url(url)
+            if not url:
+                return None
+        
+        # AmazonリンクからASINを抽出
+        parsed_url = urlparse(url)
+        path_parts = parsed_url.path.split("/")
+        for part in path_parts:
+            if len(part) == 10 and part.isalnum():  # ASINは10桁の英数字
+                return part
+        return None
+    except Exception as e:
+        logger.error(f"ASIN抽出エラー: {e}")
+        return None
 
 # ===============================
 # Discord Bot設定
@@ -138,11 +164,14 @@ async def on_message(message):
 
     for url in urls:
         await message.channel.send("リンクを確認中です...🔍")
+        
+        # ASINを取得
         asin = extract_asin(url)
         if not asin:
             await message.channel.send("ASINが取得できませんでした。❌")
             continue
 
+        # Amazon商品情報を取得
         title, price, image_url = fetch_amazon_data(asin)
         if title and price and image_url:
             embed = discord.Embed(
