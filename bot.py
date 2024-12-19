@@ -5,6 +5,7 @@ import re
 import requests
 import asyncio
 from flask import Flask
+from threading import Thread
 
 # Flaskアプリケーションの作成
 app = Flask(__name__)
@@ -50,7 +51,7 @@ async def on_message(message):
     if message.author.bot:
         return
     urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
-    amazon_urls = [url for url in urls if re.search(r"amazon\\.com|amazon\\.co\\.jp|amzn\\.asia", url)]
+    amazon_urls = [url for url in urls if re.search(r"amazon\.com|amazon\.co\.jp|amzn\.asia", url)]
     if not amazon_urls:
         return
     url = amazon_urls[0]
@@ -67,13 +68,13 @@ async def on_message(message):
     except Exception:
         await channel.send("エラー：予期せぬ問題が発生しました")
 
-# Flaskサーバーを非同期で実行するタスク
+# Flaskサーバーを別スレッドで起動
 def run_flask():
     app.run(host="0.0.0.0", port=8000)
 
-# Flaskサーバーを非同期で実行
-loop = asyncio.get_event_loop()
-loop.run_in_executor(None, run_flask)
+# スレッドで実行
+flask_thread = Thread(target=run_flask)
+flask_thread.start()
 
 # Botの起動
 bot.run(TOKEN)
