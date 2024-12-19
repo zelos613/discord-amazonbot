@@ -1,218 +1,94 @@
+# bot.py
 import os
 import discord
+from discord.ext import commands
 import re
 import requests
-import json
-import hmac
-import hashlib
-from datetime import datetime
-from urllib.parse import urlparse
-from dotenv import load_dotenv
-from flask import Flask
-import threading
-import logging
-import time
+import asyncio
 
-# ===============================
-# ログ設定
-# ===============================
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# 設定
+TOKEN = os.getenv("TOKEN")
+AFFILIATE_ID = os.getenv("AMAZON_ASSOCIATE_TAG")
+TIMEOUT = 10  # タイムアウト時間（秒）
 
-# ===============================
-# 環境変数の読み込み
-# ===============================
-load_dotenv()
-TOKEN = os.getenv('TOKEN')
-AMAZON_ACCESS_KEY = os.getenv('AMAZON_ACCESS_KEY')
-AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')
-AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
+# Discord Botの準備
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Amazonリンクの正規表現
-AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.to|amzn\.asia)/[\w\-/\?=&%\.]+)"
-
-# ===============================
-# AWS署名の生成（リージョン変更と時刻の確認）
-# ===============================
-def generate_aws_signature(payload):
-    method = "POST"
-    service = "ProductAdvertisingAPI"
-    host = "webservices.amazon.co.jp"
-    region = "ap-northeast-1"  # 東京リージョン
-    endpoint = f"https://{host}/paapi5/getitems"
-    content_type = "application/json; charset=UTF-8"
-
-    # サーバー時刻を確認（ログ出力）
-    now = datetime.utcnow()
-    logger.debug(f"現在のUTC時刻: {now.isoformat()}")
-
-    amz_date = now.strftime("%Y%m%dT%H%M%SZ")
-    date_stamp = now.strftime("%Y%m%d")
-
-    headers = {
-        "content-type": content_type,
-        "host": host,
-        "x-amz-date": amz_date,
-    }
-
-    canonical_uri = "/paapi5/getitems"
-    canonical_headers = ''.join([f"{k}:{v}\n" for k, v in headers.items()])
-    signed_headers = ';'.join(headers.keys())
-    payload_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()
-    canonical_request = (f"{method}\n{canonical_uri}\n\n"
-                         f"{canonical_headers}\n{signed_headers}\n{payload_hash}")
-
-    string_to_sign = (f"AWS4-HMAC-SHA256\n{amz_date}\n"
-                      f"{date_stamp}/{region}/{service}/aws4_request\n"
-                      f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}")
-
-    def sign(key, msg):
-        return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
-
-    k_date = sign(("AWS4" + AMAZON_SECRET_KEY).encode('utf-8'), date_stamp)
-    k_region = sign(k_date, region)
-    k_service = sign(k_region, service)
-    k_signing = sign(k_service, "aws4_request")
-    signature = hmac.new(k_signing, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
-
-    authorization_header = (f"AWS4-HMAC-SHA256 Credential={AMAZON_ACCESS_KEY}/{date_stamp}/{region}/{service}/aws4_request, "
-                             f"SignedHeaders={signed_headers}, Signature={signature}")
-    headers["Authorization"] = authorization_header
-
-    return headers, endpoint
-
-# ===============================
-# Amazon商品情報を取得
-# ===============================
-def fetch_amazon_data(asin):
-    payload = json.dumps({
-        "ItemIds": [asin],
-        "PartnerTag": AMAZON_ASSOCIATE_TAG,
-        "PartnerType": "Associates",
-        "Marketplace": "www.amazon.co.jp"
-    })
-    headers, endpoint = generate_aws_signature(payload)
-
-    logger.debug(f"Amazon PA-APIリクエストペイロード: {payload}")
-    logger.debug(f"Amazon PA-APIリクエストヘッダー: {headers}")
-
-    response = requests.post(endpoint, headers=headers, data=payload)
-
-    if response.status_code != 200:
-        logger.error(f"PA-APIエラー: ステータスコード={response.status_code}, レスポンス={response.text}")
-        return None, None, None
-
+# Amazonリンクをアフィリエイトリンクに変換する関数
+def convert_amazon_link(url):
     try:
-        data = response.json()
-        logger.debug(f"PA-APIレスポンス: {data}")
-        if "ItemsResult" in data and "Items" in data["ItemsResult"]:
-            item = data["ItemsResult"]["Items"][0]
-            title = item.get("ItemInfo", {}).get("Title", {}).get("DisplayValue", "タイトルなし")
-            return title, None, None
-        else:
-            logger.error("商品情報がレスポンスに含まれていません。")
-    except Exception as e:
-        logger.error(f"レスポンス解析エラー: {e}")
-    return None, None, None
+        print(f"[DEBUG] Original URL: {url}\n")
 
-
-
-
-# ===============================
-# 短縮URLの展開
-# ===============================
-def resolve_short_url(url):
-    try:
+        # HTTPリクエストヘッダーを追加
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        response = requests.get(url, allow_redirects=True, timeout=10, headers=headers)
-        expanded_url = response.url
-        logger.debug(f"短縮URL展開: {url} -> {expanded_url}")
-        return expanded_url
-    except Exception as e:
-        logger.error(f"短縮URLの展開に失敗しました: {e}")
-        return None
 
-# ===============================
-# ASINを抽出
-# ===============================
-def extract_asin(url):
-    """URLからASINを抽出する"""
-    try:
-        # 短縮URLを展開
-        url = resolve_short_url(url)
-        if not url:
+        # Amazonのリダイレクトを追跡
+        response = requests.get(url, allow_redirects=True, timeout=TIMEOUT, headers=headers)
+        print(f"[DEBUG] Final URL after redirection: {response.url}\n")
+
+        # アフィリエイトタグを追加
+        final_url = response.url
+        if "dp/" not in final_url:
+            print("[ERROR] URL does not contain a valid product identifier.\n")
             return None
-        
-        # AmazonリンクからASINを抽出
-        parsed_url = urlparse(url)
-        path_parts = parsed_url.path.split("/")
-        for part in path_parts:
-            if len(part) == 10 and part.isalnum():  # ASINは10桁の英数字
-                return part
-        return None
+
+        if "?" in final_url:
+            affiliate_link = f"{final_url}&tag={AFFILIATE_ID}"
+        else:
+            affiliate_link = f"{final_url}?tag={AFFILIATE_ID}"
+
+        print(f"[DEBUG] Generated affiliate link: {affiliate_link}\n")
+        return affiliate_link
+    except requests.exceptions.Timeout:
+        print("[ERROR] Timeout occurred during URL processing.\n")
+        return "TIMEOUT"
     except Exception as e:
-        logger.error(f"ASIN抽出エラー: {e}")
+        print(f"[ERROR] An error occurred: {e}\n")
         return None
 
-# ===============================
-# Discord Bot設定
-# ===============================
-intents = discord.Intents.default()
-intents.message_content = True
-client = discord.Client(intents=intents)
-
-@client.event
-async def on_ready():
-    logger.info(f"Botがログインしました: {client.user}")
-
-@client.event
+# メッセージイベントの処理
+@bot.event
 async def on_message(message):
+    # Bot自身のメッセージは無視
     if message.author.bot:
         return
 
-    urls = re.findall(AMAZON_URL_REGEX, message.content)
-    if not urls:
+    print(f"[DEBUG] Received message: {message.content}\n")
+
+    # メッセージ内のURLを抽出
+    urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
+    amazon_urls = [url for url in urls if re.search(r"amazon\.com|amazon\.co\.jp|amzn\.asia", url)]
+
+    if not amazon_urls:
+        print("[DEBUG] No Amazon URLs found in the message.")
         return
 
-    for url in urls:
-        await message.channel.send("リンクを確認中です...🔍")
-        
-        # ASINを取得
-        asin = extract_asin(url)
-        if not asin:
-            await message.channel.send("ASINが取得できませんでした。❌")
-            continue
+    # 最初のAmazonリンクを処理
+    url = amazon_urls[0]
+    print(f"[DEBUG] Extracted Amazon URL: {url}\n")
 
-        # Amazon商品情報を取得
-        title, price, image_url = fetch_amazon_data(asin)
-        if title and price and image_url:
-            embed = discord.Embed(
-                title=title,
-                url=url,
-                description=f"**価格**: {price}\n\n商品情報を整理しました！✨",
-                color=discord.Color.blue()
-            )
-            embed.set_thumbnail(url=image_url)
-            await message.channel.send(embed=embed)
+    # メッセージが送信されたチャンネルに返信
+    channel = message.channel
+
+    # タイムアウト付きでリンク変換処理
+    try:
+        loop = asyncio.get_event_loop()
+        affiliate_link = await loop.run_in_executor(None, convert_amazon_link, url)
+
+        if affiliate_link == "TIMEOUT":
+            await channel.send("エラー：タイムアウト")
+        elif affiliate_link:
+            await channel.send(f"アフィリエイトリンクへ変換 ↓ ↓\n{affiliate_link}")
         else:
-            await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
+            await channel.send("エラー：リンク変換に失敗しました")
 
-# ===============================
-# HTTPサーバー設定
-# ===============================
-app = Flask(__name__)
+    except Exception as e:
+        print(f"[ERROR] Unexpected error: {e}")
+        await channel.send("エラー：予期せぬ問題が発生しました")
 
-@app.route("/")
-def health_check():
-    return "OK", 200
-
-def run_http_server():
-    app.run(host="0.0.0.0", port=8000)
-
-http_thread = threading.Thread(target=run_http_server)
-http_thread.daemon = True
-http_thread.start()
-
-client.run(TOKEN)
+# Botの起動
+bot.run(TOKEN)
