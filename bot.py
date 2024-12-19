@@ -79,7 +79,7 @@ def get_amazon_product_info_via_api(asin):
         response = api.get_items(request)
 
         # デバッグ出力
-        print(f"Response: {response}")
+        print(f"API Response: {response}")
 
         # レスポンスから商品情報を抽出
         if response.items_result and response.items_result.items:
@@ -103,13 +103,14 @@ def get_amazon_product_info_via_api(asin):
         return None
 
 
+
 # メッセージイベントの処理
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
     urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
-    amazon_urls = [url for url in urls if re.search(r"amazon\.com|amazon\.co\.jp|amzn\.asia", url)]
+    amazon_urls = [url for url in urls if re.search(r"amazon\\.com|amazon\\.co\\.jp|amzn\\.asia", url)]
     if not amazon_urls:
         return
     url = amazon_urls[0]
@@ -118,6 +119,10 @@ async def on_message(message):
         # ASINを抽出
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", url)
         asin = asin_match.group(1) if asin_match else None
+
+        # デバッグ出力
+        print(f"Extracted ASIN: {asin}")
+        print(f"URL: {url}")
 
         if not asin:
             await channel.send("ASINが取得できませんでした。")
@@ -137,10 +142,11 @@ async def on_message(message):
                 embed.set_image(url=product_info["image_url"])
             await channel.send(embed=embed)
         else:
-            await channel.send("商品情報の取得に失敗しました")
+            await channel.send(f"商品情報が見つかりませんでした。ASIN: {asin}")
     except Exception as e:
         print(f"Error: {e}")
         await channel.send("エラー：予期せぬ問題が発生しました")
+
 
 # Botの起動
 bot.run(TOKEN)
