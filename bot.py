@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 from flask import Flask
 import threading
 import logging
-import asyncio
 
 # ===============================
 # ログ設定
@@ -30,7 +29,6 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 
 # Amazonリンクの正規表現
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.to|amzn\.asia)/[\w\-/\?=&%\.]+)"
-TIMEOUT = 10  # タイムアウト時間
 
 # ===============================
 # AWS署名の生成
@@ -95,16 +93,23 @@ def fetch_amazon_data(asin):
         "Marketplace": "www.amazon.co.jp"
     })
     headers, endpoint = generate_aws_signature(payload)
+    
+    logger.debug(f"Amazon PA-APIリクエストペイロード: {payload}")
+    logger.debug(f"Amazon PA-APIリクエストヘッダー: {headers}")
+
     response = requests.post(endpoint, headers=headers, data=payload)
 
-    if response.status_code == 200:
-        data = response.json()
-        if "ItemsResult" in data and "Items" in data["ItemsResult"]:
-            item = data["ItemsResult"]["Items"][0]
-            title = item["ItemInfo"]["Title"]["DisplayValue"]
-            price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"]
-            image_url = item["Images"]["Primary"]["Large"]["URL"]
-            return title, price, image_url
+    if response.status_code != 200:
+        logger.error(f"PA-APIエラー: ステータスコード={response.status_code}, レスポンス={response.text}")
+        return None, None, None
+
+    data = response.json()
+    if "ItemsResult" in data and "Items" in data["ItemsResult"]:
+        item = data["ItemsResult"]["Items"][0]
+        title = item["ItemInfo"]["Title"]["DisplayValue"]
+        price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"]
+        image_url = item["Images"]["Primary"]["Large"]["URL"]
+        return title, price, image_url
     return None, None, None
 
 # ===============================
@@ -115,7 +120,7 @@ def resolve_short_url(url):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        response = requests.get(url, allow_redirects=True, timeout=TIMEOUT, headers=headers)
+        response = requests.get(url, allow_redirects=True, timeout=10, headers=headers)
         expanded_url = response.url
         logger.debug(f"短縮URL展開: {url} -> {expanded_url}")
         return expanded_url
