@@ -78,13 +78,22 @@ def get_amazon_product_info_via_api(asin):
         # リクエスト送信
         response = api.get_items(request)
 
+        # デバッグ出力
+        print(f"Response: {response}")
+
         # レスポンスから商品情報を抽出
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
+
+            # デバッグ出力：itemの詳細
+            print(f"Item Info: {item.item_info}")
+            print(f"Offers: {item.offers}")
+            print(f"Images: {item.images}")
+
             return {
-                "title": item.item_info.title.display_value if item.item_info.title else "商品名なし",
-                "price": item.offers.listings[0].price.display_amount if item.offers.listings else "価格情報なし",
-                "image_url": item.images.primary.large.url if item.images.primary else "",
+                "title": item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし",
+                "price": item.offers.listings[0].price.display_amount if item.offers and item.offers.listings else "価格情報なし",
+                "image_url": item.images.primary.large.url if item.images and item.images.primary else "",
             }
         else:
             print("商品情報が見つかりませんでした")
@@ -92,6 +101,7 @@ def get_amazon_product_info_via_api(asin):
     except Exception as e:
         print(f"Error fetching product info via PA-API: {e}")
         return None
+
 
 # メッセージイベントの処理
 @bot.event
