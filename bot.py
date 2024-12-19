@@ -6,6 +6,7 @@ import requests
 import asyncio
 from flask import Flask
 import threading
+from amazon.paapi import AmazonAPI  # PA-APIライブラリを使用
 
 # ===============================
 # HTTPサーバーのセットアップ
@@ -27,7 +28,12 @@ http_thread.start()
 # 設定
 TOKEN = os.getenv("TOKEN")
 AFFILIATE_ID = os.getenv("AMAZON_ASSOCIATE_TAG")
+AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY")
+AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY")
 TIMEOUT = 10  # タイムアウト時間（秒）
+
+# AmazonAPIインスタンス作成
+amazon = AmazonAPI(AMAZON_ACCESS_KEY, AMAZON_SECRET_KEY, AFFILIATE_ID, "JP")
 
 # Discord Botの準備
 intents = discord.Intents.default()
@@ -56,14 +62,28 @@ def convert_amazon_link(url):
 
 # Amazon商品情報を取得する関数
 def get_amazon_product_info(affiliate_link):
-    # 実際にAmazon APIを利用する実装をここに記載してください
-    # 現在はダミー値を返します
-    return {
-        "title": "",  # 実際のタイトルを取得して設定
-        "price": "",  # 実際の価格を取得して設定
-        "image_url": "",  # 実際の画像URLを取得して設定
-        "link": affiliate_link
-    }
+    try:
+        # 商品ID（ASIN）をURLから抽出
+        asin_match = re.search(r"/dp/([A-Z0-9]{10})", affiliate_link)
+        if not asin_match:
+            return None
+        asin = asin_match.group(1)
+
+        # PA-APIで商品情報を取得
+        product = amazon.get_items(asin)
+        if not product or not product.items:
+            return None
+
+        item = product.items[0]
+        return {
+            "title": item.title,
+            "price": item.prices.price.value if item.prices.price else "価格情報なし",
+            "image_url": item.images.primary.large.url if item.images and item.images.primary else "",
+            "link": affiliate_link
+        }
+    except Exception as e:
+        print(f"Error fetching product info: {e}")
+        return None
 
 # メッセージイベントの処理
 @bot.event
@@ -83,19 +103,23 @@ async def on_message(message):
             await channel.send("エラー：タイムアウト")
         elif affiliate_link:
             product_info = get_amazon_product_info(affiliate_link)
-            embed = discord.Embed(
-                title=product_info["title"] or "商品情報",  # タイトルが取得できない場合はデフォルト値
-                url=product_info["link"],
-                description="商品情報を整理しました✨️",
-                color=0x00ff00
-            )
-            embed.add_field(name="価格", value=product_info["price"] or "価格情報なし", inline=False)
-            if product_info["image_url"]:
-                embed.set_image(url=product_info["image_url"])
-            await channel.send(embed=embed)
+            if product_info:
+                embed = discord.Embed(
+                    title=product_info["title"] or "商品情報",
+                    url=product_info["link"],
+                    description="商品情報を整理しました✨️",
+                    color=0x00ff00
+                )
+                embed.add_field(name="価格", value=product_info["price"], inline=False)
+                if product_info["image_url"]:
+                    embed.set_image(url=product_info["image_url"])
+                await channel.send(embed=embed)
+            else:
+                await channel.send("商品情報の取得に失敗しました")
         else:
             await channel.send("エラー：リンク変換に失敗しました")
-    except Exception:
+    except Exception as e:
+        print(f"Error: {e}")
         await channel.send("エラー：予期せぬ問題が発生しました")
 
 # Botの起動
