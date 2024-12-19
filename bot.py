@@ -33,7 +33,7 @@ AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY")
 AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY")
 PROXY_HTTP = os.getenv("PROXY_HTTP")
 PROXY_HTTPS = os.getenv("PROXY_HTTPS")
-TIMEOUT = 10  # タイムアウト時間（秒）
+TIMEOUT = 20  # タイムアウト時間（秒）を延長
 
 # プロキシ設定
 proxies = {
