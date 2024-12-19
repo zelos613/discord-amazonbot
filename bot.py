@@ -143,6 +143,11 @@ async def on_message(message):
             await channel.send("ASINが取得できませんでした。")
             return
 
+        # アフィリエイトリンクを生成
+        affiliate_link = convert_amazon_link(url)
+        if affiliate_link:
+            await channel.send(f"アフィリエイトリンク: {affiliate_link}")
+
         # 商品情報を取得
         product_info = get_amazon_product_info_via_api(asin)
         if product_info:
