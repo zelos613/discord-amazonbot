@@ -1,6 +1,5 @@
 discord.py
 requests
 python-dotenv
--e /app/paapi5_python_sdk
 
 
