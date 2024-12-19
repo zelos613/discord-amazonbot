@@ -15,6 +15,9 @@ COPY paapi5-python-sdk/ paapi5-python-sdk/
 # 必要ライブラリをインストール
 RUN pip install --no-cache-dir -r requirements.txt
 
+# モジュールパスの追加
+ENV PYTHONPATH="${PYTHONPATH}:/app"
+
 # ポート8000を公開（ヘルスチェック用）
 EXPOSE 8000
 
