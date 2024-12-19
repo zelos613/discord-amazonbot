@@ -115,6 +115,7 @@ def extract_asin(url):
         # 標準的なAmazonリンクからASINを抽出
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", url)
         if asin_match:
+            print(f"Extracted ASIN from direct URL: {asin_match.group(1)}")
             return asin_match.group(1)
 
         # 短縮URLの場合、リダイレクト先のURLを取得してASINを抽出
@@ -123,11 +124,14 @@ def extract_asin(url):
         }
         response = requests.get(url, headers=headers, allow_redirects=True, timeout=TIMEOUT, proxies=proxies)
         redirect_url = response.url
+        print(f"Redirected URL: {redirect_url}")
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", redirect_url)
         if asin_match:
+            print(f"Extracted ASIN from redirected URL: {asin_match.group(1)}")
             return asin_match.group(1)
 
         # それ以外の場合ASINを抽出できない
+        print("ASIN not found in URL")
         return None
     except Exception as e:
         print(f"Error extracting ASIN: {e}")
