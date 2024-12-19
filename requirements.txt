@@ -1,4 +1,4 @@
 discord.py
 requests
 python-dotenv
--e ./paapi5-python-sdk
+./paapi5-python-sdk
