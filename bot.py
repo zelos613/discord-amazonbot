@@ -54,6 +54,16 @@ def convert_amazon_link(url):
     except Exception:
         return None
 
+# Amazon商品情報を取得する関数
+def get_amazon_product_info(affiliate_link):
+    # 仮の実装: 商品名、価格、画像URLを返す
+    return {
+        "title": "商品名（例: HyperX QuadCast スタンドアロンマイク）",
+        "price": "￥12,800",
+        "image_url": "https://example.com/image.jpg",
+        "link": affiliate_link
+    }
+
 # メッセージイベントの処理
 @bot.event
 async def on_message(message):
@@ -71,7 +81,16 @@ async def on_message(message):
         if affiliate_link == "TIMEOUT":
             await channel.send("エラー：タイムアウト")
         elif affiliate_link:
-            await channel.send(f"アフィリエイトリンクへ変換 ↓ ↓\n{affiliate_link}")
+            product_info = get_amazon_product_info(affiliate_link)
+            embed = discord.Embed(
+                title=product_info["title"],
+                url=product_info["link"],
+                description="商品情報を整理しました✨️",
+                color=0x00ff00
+            )
+            embed.add_field(name="価格", value=product_info["price"], inline=False)
+            embed.set_image(url=product_info["image_url"])
+            await channel.send(embed=embed)
         else:
             await channel.send("エラー：リンク変換に失敗しました")
     except Exception:
