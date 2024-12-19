@@ -4,3 +4,4 @@ boto3
 Flask
 python-dotenv
 beautifulsoup4
+lxml
