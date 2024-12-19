@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from flask import Flask
 import threading
 import logging
+import time
 
 # ===============================
 # ログ設定
@@ -31,17 +32,20 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.to|amzn\.asia)/[\w\-/\?=&%\.]+)"
 
 # ===============================
-# AWS署名の生成
+# AWS署名の生成（リージョン変更と時刻の確認）
 # ===============================
 def generate_aws_signature(payload):
     method = "POST"
     service = "ProductAdvertisingAPI"
     host = "webservices.amazon.co.jp"
-    region = "us-west-2"
+    region = "ap-northeast-1"  # 東京リージョン
     endpoint = f"https://{host}/paapi5/getitems"
     content_type = "application/json; charset=UTF-8"
 
+    # サーバー時刻を確認（ログ出力）
     now = datetime.utcnow()
+    logger.debug(f"現在のUTC時刻: {now.isoformat()}")
+
     amz_date = now.strftime("%Y%m%dT%H%M%SZ")
     date_stamp = now.strftime("%Y%m%d")
 
@@ -103,27 +107,16 @@ def fetch_amazon_data(asin):
         logger.debug(f"PA-APIレスポンス: {data}")
         if "ItemsResult" in data and "Items" in data["ItemsResult"]:
             item = data["ItemsResult"]["Items"][0]
-            title = item["ItemInfo"]["Title"]["DisplayValue"] if "ItemInfo" in item and "Title" in item["ItemInfo"] else "タイトルなし"
-            return title, None, None
+            title = item.get("ItemInfo", {}).get("Title", {}).get("DisplayValue", "タイトルなし")
+            price = item.get("Offers", {}).get("Listings", [{}])[0].get("Price", {}).get("DisplayAmount", "価格情報なし")
+            image_url = item.get("Images", {}).get("Primary", {}).get("Large", {}).get("URL", None)
+            return title, price, image_url
         else:
             logger.error("商品情報がレスポンスに含まれていません。")
     except Exception as e:
         logger.error(f"レスポンス解析エラー: {e}")
     return None, None, None
 
-
-    data = response.json()
-    logger.debug(f"PA-APIレスポンス: {data}")
-
-    if "ItemsResult" in data and "Items" in data["ItemsResult"]:
-        item = data["ItemsResult"]["Items"][0]
-        title = item["ItemInfo"]["Title"]["DisplayValue"] if "ItemInfo" in item and "Title" in item["ItemInfo"] else "タイトルなし"
-        price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"] if "Offers" in item and "Listings" in item["Offers"] else "価格情報なし"
-        image_url = item["Images"]["Primary"]["Large"]["URL"] if "Images" in item and "Primary" in item["Images"] else None
-        return title, price, image_url
-    else:
-        logger.error("PA-APIレスポンスに商品情報が含まれていません。")
-    return None, None, None
 
 
 # ===============================
