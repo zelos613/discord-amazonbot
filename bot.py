@@ -83,11 +83,6 @@ def generate_aws_signature(payload):
 def fetch_amazon_data(asin):
     payload = json.dumps({
         "ItemIds": [asin],
-        "Resources": [
-            "Images.Primary.Large",
-            "ItemInfo.Title",
-            "Offers.Listings.Price"
-        ],
         "PartnerTag": AMAZON_ASSOCIATE_TAG,
         "PartnerType": "Associates",
         "Marketplace": "www.amazon.co.jp"
@@ -104,13 +99,18 @@ def fetch_amazon_data(asin):
         return None, None, None
 
     data = response.json()
+    logger.debug(f"PA-APIレスポンス: {data}")
+
     if "ItemsResult" in data and "Items" in data["ItemsResult"]:
         item = data["ItemsResult"]["Items"][0]
-        title = item["ItemInfo"]["Title"]["DisplayValue"]
-        price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"]
-        image_url = item["Images"]["Primary"]["Large"]["URL"]
+        title = item["ItemInfo"]["Title"]["DisplayValue"] if "ItemInfo" in item and "Title" in item["ItemInfo"] else "タイトルなし"
+        price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"] if "Offers" in item and "Listings" in item["Offers"] else "価格情報なし"
+        image_url = item["Images"]["Primary"]["Large"]["URL"] if "Images" in item and "Primary" in item["Images"] else None
         return title, price, image_url
+    else:
+        logger.error("PA-APIレスポンスに商品情報が含まれていません。")
     return None, None, None
+
 
 # ===============================
 # 短縮URLの展開
