@@ -3,11 +3,10 @@ import discord
 import re
 import requests
 import json
-from paapi5_python_sdk.api.default_api import DefaultApi
-from paapi5_python_sdk.models.get_items_request import GetItemsRequest
-from paapi5_python_sdk.models.get_items_resource import GetItemsResource
-from paapi5_python_sdk.configuration import Configuration
-from paapi5_python_sdk.api_client import ApiClient
+import hmac
+import hashlib
+from datetime import datetime
+from urllib.parse import quote
 from dotenv import load_dotenv
 from flask import Flask
 import threading
@@ -25,63 +24,86 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/[\w\-/\?=&%\.]+)"
 
 # ===============================
-# PA-APIの設定
+# AWS署名バージョン4の生成
 # ===============================
-config = Configuration(
-    access_key=AMAZON_ACCESS_KEY,
-    secret_key=AMAZON_SECRET_KEY,
-    host="webservices.amazon.co.jp",
-    region="JP"  # 日本向け
-)
-api_client = ApiClient(config)
-api = DefaultApi(api_client)
+def generate_aws_signature(payload):
+    method = "POST"
+    service = "ProductAdvertisingAPI"
+    host = "webservices.amazon.co.jp"
+    region = "us-west-2"
+    endpoint = f"https://{host}/paapi5/getitems"
+    content_type = "application/json; charset=UTF-8"
+    
+    # 日付情報
+    now = datetime.utcnow()
+    amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = now.strftime("%Y%m%d")
 
+    # 必須ヘッダー
+    headers = {
+        "content-type": content_type,
+        "host": host,
+        "x-amz-date": amz_date,
+    }
 
-# ===============================
-# ASINの抽出
-# ===============================
-def extract_asin(url):
-    try:
-        # 試行: dpやdを含むURLからASINを抽出
-        match = re.search(r"(?:dp|gp/product|d)/([A-Z0-9]{10})", url)
-        if match:
-            return match.group(1)
-        # 短縮URLのリダイレクト検索
-        response = requests.get(url, allow_redirects=True, timeout=5)
-        expanded_url = response.url
-        match = re.search(r"(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
-        if match:
-            return match.group(1)
-        # URLの抽出に失敗した場合のログ出力
-        print(f"ASIN抽出失敗: URL={url}")
-    except Exception as e:
-        print(f"ASIN抽出エラー: {e}")
-    return None
+    # Canonicalリクエスト
+    canonical_uri = "/paapi5/getitems"
+    canonical_querystring = ""
+    canonical_headers = ''.join([f"{k}:{v}\n" for k, v in headers.items()])
+    signed_headers = ';'.join(headers.keys())
+    payload_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+    canonical_request = (f"{method}\n{canonical_uri}\n{canonical_querystring}\n"
+                         f"{canonical_headers}\n{signed_headers}\n{payload_hash}")
+
+    # String to Sign
+    algorithm = "AWS4-HMAC-SHA256"
+    credential_scope = f"{date_stamp}/{region}/{service}/aws4_request"
+    string_to_sign = (f"{algorithm}\n{amz_date}\n{credential_scope}\n"
+                      f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}")
+
+    # 署名の計算
+    def sign(key, msg):
+        return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
+
+    k_date = sign(("AWS4" + AMAZON_SECRET_KEY).encode('utf-8'), date_stamp)
+    k_region = sign(k_date, region)
+    k_service = sign(k_region, service)
+    k_signing = sign(k_service, "aws4_request")
+    signature = hmac.new(k_signing, string_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+
+    # Authorizationヘッダー
+    authorization_header = (f"{algorithm} Credential={AMAZON_ACCESS_KEY}/{credential_scope}, "
+                             f"SignedHeaders={signed_headers}, Signature={signature}")
+    headers["Authorization"] = authorization_header
+
+    return headers, endpoint
 
 # ===============================
 # Amazon PA-APIから商品情報を取得
 # ===============================
 def fetch_amazon_data(asin):
     try:
-        print(f"Fetching data for ASIN: {asin}")
-        request = GetItemsRequest(
-            partner_tag=AMAZON_ASSOCIATE_TAG,
-            partner_type="Associates",
-            marketplace="www.amazon.co.jp",
-            item_ids=[asin],
-            resources=[
-                GetItemsResource.IMAGES_PRIMARY_LARGE,
-                GetItemsResource.ITEM_INFO_TITLE,
-                GetItemsResource.OFFERS_LISTINGS_PRICE
-            ]
-        )
-        response = api.get_items(request)
-        if response and response.items_result and response.items_result.items:
-            item = response.items_result.items[0]
-            title = item.item_info.title.display_value
-            price = item.offers.listings[0].price.display_amount
-            image_url = item.images.primary.large.url
-            return title, price, image_url
+        payload = json.dumps({
+            "ItemIds": [asin],
+            "Resources": [
+                "Images.Primary.Large",
+                "ItemInfo.Title",
+                "Offers.Listings.Price"
+            ],
+            "PartnerTag": AMAZON_ASSOCIATE_TAG,
+            "PartnerType": "Associates",
+            "Marketplace": "www.amazon.co.jp"
+        })
+        headers, endpoint = generate_aws_signature(payload)
+        response = requests.post(endpoint, headers=headers, data=payload)
+        if response.status_code == 200:
+            data = response.json()
+            if "ItemsResult" in data and "Items" in data["ItemsResult"]:
+                item = data["ItemsResult"]["Items"][0]
+                title = item["ItemInfo"]["Title"]["DisplayValue"]
+                price = item["Offers"]["Listings"][0]["Price"]["DisplayAmount"]
+                image_url = item["Images"]["Primary"]["Large"]["URL"]
+                return title, price, image_url
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
     return None, None, None
@@ -94,11 +116,11 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 @client.event
-async def on_ready():
+def on_ready():
     print(f'Botがログインしました: {client.user}')
 
 @client.event
-async def on_message(message):
+def on_message(message):
     if message.author.bot:
         return
 
