@@ -1,64 +1,75 @@
 import os
-import re
 import discord
-import requests
-from urllib.parse import urlparse
-from dotenv import load_dotenv
+import re
 from paapi5_python_sdk.api.default_api import DefaultApi
-from paapi5_python_sdk.paapi5_sdk_exception import Paapi5SdkException
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
-from paapi5_python_sdk.models.partner_type import PartnerType
-from paapi5_python_sdk.models.resources import Resources
+from paapi5_python_sdk.models.get_items_resource import GetItemsResource
+from paapi5_python_sdk.configuration import Configuration
+from dotenv import load_dotenv
 
-# 環境変数読み込み
+# 環境変数の読み込み
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
 AMAZON_ACCESS_KEY = os.getenv('AMAZON_ACCESS_KEY')
 AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')
 AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 
-# Amazon PA-API設定
-api_instance = DefaultApi(
+# 正規表現: Amazonリンクの検出 (短縮URL含む)
+AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/[\w\-/\?=&%\.]+)"
+
+# Amazon APIクライアントの初期化
+configuration = Configuration(
     access_key=AMAZON_ACCESS_KEY,
     secret_key=AMAZON_SECRET_KEY,
     host="webservices.amazon.co.jp",
     region="us-west-2"
 )
+api_client = DefaultApi(configuration=configuration)
 
-# ASIN抽出関数
+# ASINの抽出
 def extract_asin(url):
     try:
+        # dpやdを含むURLからASINを抽出
         match = re.search(r"(?:dp|gp/product|d)/([A-Z0-9]{10})", url)
-        return match.group(1) if match else None
+        if match:
+            return match.group(1)
+        # 短縮URLのリダイレクトを処理
+        response = requests.get(url, allow_redirects=True, timeout=5)
+        expanded_url = response.url
+        match = re.search(r"(?:dp|gp/product|d)/([A-Z0-9]{10})", expanded_url)
+        if match:
+            return match.group(1)
+        print(f"ASIN抽出失敗: URL={url}")
     except Exception as e:
         print(f"ASIN抽出エラー: {e}")
     return None
 
-# 商品情報取得関数
+# Amazon商品情報の取得
 def fetch_amazon_data(asin):
     try:
-        get_items_request = GetItemsRequest(
+        request = GetItemsRequest(
             partner_tag=AMAZON_ASSOCIATE_TAG,
-            partner_type=PartnerType.ASSOCIATES,
+            partner_type="Associates",
             marketplace="www.amazon.co.jp",
             item_ids=[asin],
             resources=[
-                Resources.ITEM_INFO_TITLE,
-                Resources.OFFERS_LISTINGS_PRICE,
-                Resources.IMAGES_PRIMARY_LARGE
+                GetItemsResource.IMAGES_PRIMARY_LARGE,
+                GetItemsResource.ITEM_INFO_TITLE,
+                GetItemsResource.OFFERS_LISTINGS_PRICE
             ]
         )
-        response = api_instance.get_items(get_items_request)
-        item = response.items_result.items[0]
-        title = item.item_info.title.display_value
-        price = item.offers.listings[0].price.display_amount
-        image_url = item.images.primary.large.url
-        return title, price, image_url
-    except Paapi5SdkException as e:
-        print(f"PA-APIエラー: {e}")
+        response = api_client.get_items(request)
+        if response.items_result and response.items_result.items:
+            item = response.items_result.items[0]
+            title = item.item_info.title.display_value
+            price = item.offers.listings[0].price.display_amount if item.offers and item.offers.listings else "価格情報なし"
+            image_url = item.images.primary.large.url
+            return title, price, image_url
+    except Exception as e:
+        print(f"Amazon情報取得エラー: {e}")
     return None, None, None
 
-# Discord Bot
+# Discord Botの初期化
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
@@ -72,7 +83,10 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    urls = re.findall(r"(https?://(?:www\.)?amazon\.co\.jp/[\w\-/]+)", message.content)
+    urls = re.findall(AMAZON_URL_REGEX, message.content)
+    if not urls:
+        return
+
     for url in urls:
         await message.channel.send("リンクを確認中です...🔍")
         asin = extract_asin(url)
@@ -85,7 +99,7 @@ async def on_message(message):
             embed = discord.Embed(
                 title=title,
                 url=url,
-                description=f"**価格**: {price}\n✨ 商品情報を整理しました！",
+                description=f"**価格**: {price}\n\n✨ 商品情報を整理しました！",
                 color=discord.Color.blue()
             )
             embed.set_thumbnail(url=image_url)
