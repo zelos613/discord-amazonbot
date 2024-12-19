@@ -19,6 +19,9 @@ COPY requirements.txt .
 # Pythonパッケージのインストール
 RUN pip install --no-cache-dir -r requirements.txt
 
+# SDKをプロジェクトにコピー
+COPY paapi5_python_sdk ./paapi5_python_sdk
+
 # ソースコードをコピー
 COPY . .
 
