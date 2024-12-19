@@ -5,15 +5,24 @@ import re
 import requests
 import asyncio
 from flask import Flask
-from threading import Thread
+import threading
 
-# Flaskアプリケーションの作成
+# ===============================
+# HTTPサーバーのセットアップ
+# ===============================
 app = Flask(__name__)
 
-# ヘルスチェック用のエンドポイント
-@app.route('/')
+@app.route("/")
 def health_check():
-    return "Bot is running!", 200
+    return "OK", 200
+
+def run_http_server():
+    app.run(host="0.0.0.0", port=8000)
+
+# HTTPサーバーをバックグラウンドで実行
+http_thread = threading.Thread(target=run_http_server)
+http_thread.daemon = True
+http_thread.start()
 
 # 設定
 TOKEN = os.getenv("TOKEN")
@@ -67,14 +76,6 @@ async def on_message(message):
             await channel.send("エラー：リンク変換に失敗しました")
     except Exception:
         await channel.send("エラー：予期せぬ問題が発生しました")
-
-# Flaskサーバーを別スレッドで起動
-def run_flask():
-    app.run(host="0.0.0.0", port=8000)
-
-# スレッドで実行
-flask_thread = Thread(target=run_flask)
-flask_thread.start()
 
 # Botの起動
 bot.run(TOKEN)
