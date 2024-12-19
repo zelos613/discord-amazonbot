@@ -56,11 +56,12 @@ def convert_amazon_link(url):
 
 # Amazon商品情報を取得する関数
 def get_amazon_product_info(affiliate_link):
-    # 仮の実装: 商品名、価格、画像URLを返す
+    # 実際にAmazon APIを利用する実装をここに記載してください
+    # 現在はダミー値を返します
     return {
-        "title": "商品名（例: HyperX QuadCast スタンドアロンマイク）",
-        "price": "￥12,800",
-        "image_url": "https://example.com/image.jpg",
+        "title": "",  # 実際のタイトルを取得して設定
+        "price": "",  # 実際の価格を取得して設定
+        "image_url": "",  # 実際の画像URLを取得して設定
         "link": affiliate_link
     }
 
@@ -83,13 +84,14 @@ async def on_message(message):
         elif affiliate_link:
             product_info = get_amazon_product_info(affiliate_link)
             embed = discord.Embed(
-                title=product_info["title"],
+                title=product_info["title"] or "商品情報",  # タイトルが取得できない場合はデフォルト値
                 url=product_info["link"],
                 description="商品情報を整理しました✨️",
                 color=0x00ff00
             )
-            embed.add_field(name="価格", value=product_info["price"], inline=False)
-            embed.set_image(url=product_info["image_url"])
+            embed.add_field(name="価格", value=product_info["price"] or "価格情報なし", inline=False)
+            if product_info["image_url"]:
+                embed.set_image(url=product_info["image_url"])
             await channel.send(embed=embed)
         else:
             await channel.send("エラー：リンク変換に失敗しました")
