@@ -6,7 +6,7 @@ import json
 import hmac
 import hashlib
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
 from dotenv import load_dotenv
 from flask import Flask
 import threading
@@ -107,6 +107,24 @@ def fetch_amazon_data(asin):
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
     return None, None, None
+
+# ===============================
+# ASINをURLから抽出する関数
+# ===============================
+def extract_asin(url):
+    try:
+        parsed_url = urlparse(url)
+        if "amzn.asia" in parsed_url.netloc or "amzn.to" in parsed_url.netloc:
+            return url.split("/")[-1]
+        elif "amazon.co.jp" in parsed_url.netloc:
+            path_parts = parsed_url.path.split("/")
+            for part in path_parts:
+                if len(part) == 10 and part.isalnum():
+                    return part
+        return None
+    except Exception as e:
+        print(f"ASIN抽出エラー: {e}")
+        return None
 
 # ===============================
 # Discord Bot本体
