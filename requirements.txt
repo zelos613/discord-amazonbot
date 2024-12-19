@@ -3,5 +3,6 @@ requests
 boto3
 Flask
 python-dotenv
-beautifulsoup4
-lxml
+certifi
+six
+python-dateutil
