@@ -111,7 +111,12 @@ def fetch_amazon_data(asin):
 def resolve_short_url(url):
     """短縮URLを展開する"""
     try:
-        response = requests.head(url, allow_redirects=True)
+        # HEADリクエストを試行
+        response = requests.head(url, allow_redirects=True, timeout=5)
+        if response.status_code == 404 or response.is_redirect is False:
+            # GETリクエストにフォールバック
+            response = requests.get(url, allow_redirects=True, timeout=5)
+        
         expanded_url = response.url
         logger.debug(f"短縮URL展開: {url} -> {expanded_url}")
         return expanded_url
