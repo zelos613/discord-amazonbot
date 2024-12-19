@@ -41,16 +41,6 @@ proxies = {
     "https": PROXY_HTTPS
 }
 
-# プロキシ接続のテスト
-def test_proxy_connection():
-    try:
-        test_url = "http://httpbin.org/ip"
-        response = requests.get(test_url, proxies=proxies, timeout=10)
-        print("=== Proxy Test ===")
-        print(f"Response: {response.text}")
-    except Exception as e:
-        print(f"Error testing proxy connection: {e}")
-
 # Discord Botの準備
 intents = discord.Intents.default()
 intents.message_content = True
@@ -148,12 +138,8 @@ def extract_asin(url):
 async def on_message(message):
     if message.author.bot:
         return
-
-    # プロキシ接続テスト
-    test_proxy_connection()
-
     urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
-    amazon_urls = [url for url in urls if re.search(r"amazon\\.com|amazon\\.co\\.jp|amzn\\.asia", url)]
+    amazon_urls = [url for url in urls if re.search(r"amazon\.com|amazon\.co\.jp|amzn\.asia", url)]
     if not amazon_urls:
         return
     url = amazon_urls[0]
