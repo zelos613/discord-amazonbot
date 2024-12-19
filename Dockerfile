@@ -1,22 +1,17 @@
 # ベースイメージを指定
-FROM python:3.10
+FROM python:3.9-slim
 
 # 作業ディレクトリを設定
 WORKDIR /app
 
-# 必要ファイルをコピー
+# 必要なファイルをコンテナにコピー
 COPY requirements.txt requirements.txt
-COPY bot.py bot.py
-COPY paapi5_python_sdk/ ./paapi5_python_sdk/
 
-# 必要ライブラリをインストール
+# 必要なライブラリをインストール
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pythonモジュールパスを設定
-ENV PYTHONPATH=/app:/app/paapi5_python_sdk
+# アプリケーションコードをコピー
+COPY . .
 
-# ポート8000を公開（ヘルスチェック用）
-EXPOSE 8000
-
-# アプリケーションを実行
+# エントリーポイントを指定
 CMD ["python", "bot.py"]
