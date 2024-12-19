@@ -84,12 +84,6 @@ def get_amazon_product_info_via_api(asin):
         # レスポンスから商品情報を抽出
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
-
-            # デバッグ出力：itemの詳細
-            print(f"Item Info: {item.item_info}")
-            print(f"Offers: {item.offers}")
-            print(f"Images: {item.images}")
-
             return {
                 "title": item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし",
                 "price": item.offers.listings[0].price.display_amount if item.offers and item.offers.listings else "価格情報なし",
@@ -102,7 +96,29 @@ def get_amazon_product_info_via_api(asin):
         print(f"Error fetching product info via PA-API: {e}")
         return None
 
+# ASINを抽出する関数
+def extract_asin(url):
+    try:
+        # 標準的なAmazonリンクからASINを抽出
+        asin_match = re.search(r"/dp/([A-Z0-9]{10})", url)
+        if asin_match:
+            return asin_match.group(1)
 
+        # 短縮URLの場合、リダイレクト先のURLを取得してASINを抽出
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, allow_redirects=True, timeout=TIMEOUT)
+        redirect_url = response.url
+        asin_match = re.search(r"/dp/([A-Z0-9]{10})", redirect_url)
+        if asin_match:
+            return asin_match.group(1)
+
+        # それ以外の場合ASINを抽出できない
+        return None
+    except Exception as e:
+        print(f"Error extracting ASIN: {e}")
+        return None
 
 # メッセージイベントの処理
 @bot.event
@@ -110,15 +126,14 @@ async def on_message(message):
     if message.author.bot:
         return
     urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
-    amazon_urls = [url for url in urls if re.search(r"amazon\\.com|amazon\\.co\\.jp|amzn\\.asia", url)]
+    amazon_urls = [url for url in urls if re.search(r"amazon\.com|amazon\.co\.jp|amzn\.asia", url)]
     if not amazon_urls:
         return
     url = amazon_urls[0]
     channel = message.channel
     try:
         # ASINを抽出
-        asin_match = re.search(r"/dp/([A-Z0-9]{10})", url)
-        asin = asin_match.group(1) if asin_match else None
+        asin = extract_asin(url)
 
         # デバッグ出力
         print(f"Extracted ASIN: {asin}")
@@ -146,7 +161,6 @@ async def on_message(message):
     except Exception as e:
         print(f"Error: {e}")
         await channel.send("エラー：予期せぬ問題が発生しました")
-
 
 # Botの起動
 bot.run(TOKEN)
