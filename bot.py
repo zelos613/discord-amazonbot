@@ -56,6 +56,7 @@ def convert_amazon_link(url):
         return None
 
 # Amazon商品情報を取得する関数
+# Amazon商品情報を取得する関数
 def get_amazon_product_info(affiliate_link):
     try:
         headers = {
@@ -65,16 +66,27 @@ def get_amazon_product_info(affiliate_link):
         soup = BeautifulSoup(response.content, "html.parser")
 
         # 商品名を取得
-        title = soup.find(id="productTitle")
-        title = title.get_text(strip=True) if title else "商品名が取得できません"
+        title_element = soup.find(id="productTitle")
+        title = title_element.get_text(strip=True) if title_element else "商品名が取得できません"
 
         # 価格を取得
-        price = soup.find("span", {"class": "a-price-whole"})
-        price = f"￥{price.get_text(strip=True)}" if price else "価格情報なし"
+        price_element = soup.find("span", {"class": "a-price-whole"}) or soup.find(id="priceblock_ourprice")
+        price_fraction = soup.find("span", {"class": "a-price-fraction"})  # 小数点以下を取得
+        if price_element:
+            price = f"￥{price_element.get_text(strip=True)}"
+            if price_fraction:
+                price += f".{price_fraction.get_text(strip=True)}"
+        else:
+            price = "価格情報なし"
 
         # 画像URLを取得
-        image = soup.find("img", {"id": "landingImage"})
-        image_url = image["src"] if image else ""
+        image_element = soup.find("img", {"id": "landingImage"})
+        image_url = image_element["src"] if image_element else ""
+
+        # デバッグ情報
+        print(f"Extracted Title: {title}")
+        print(f"Extracted Price: {price}")
+        print(f"Extracted Image URL: {image_url}")
 
         return {
             "title": title,
@@ -85,6 +97,7 @@ def get_amazon_product_info(affiliate_link):
     except Exception as e:
         print(f"Error fetching product info: {e}")
         return None
+
 
 # メッセージイベントの処理
 @bot.event
