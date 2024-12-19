@@ -11,7 +11,6 @@ COPY ./paapi5_python_sdk /app/paapi5_python_sdk
 
 # 必要ライブラリをインストール
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install -e /app/paapi5-python-sdk
 
 # Pythonモジュールパスを明示的に追加
 ENV PYTHONPATH=/app:/app/paapi5-python-sdk
