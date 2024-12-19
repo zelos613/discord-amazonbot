@@ -79,7 +79,10 @@ def get_amazon_product_info_via_api(asin):
         response = api.get_items(request)
 
         # デバッグ出力
-        print(f"API Response: {response}")
+        print("=== API Debug Information ===")
+        print(f"ASIN: {asin}")
+        print(f"Request: {request}")
+        print(f"Response: {response}")
 
         # レスポンスから商品情報を抽出
         if response.items_result and response.items_result.items:
@@ -95,6 +98,7 @@ def get_amazon_product_info_via_api(asin):
     except Exception as e:
         print(f"Error fetching product info via PA-API: {e}")
         return None
+
 
 # ASINを抽出する関数
 def extract_asin(url):
