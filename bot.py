@@ -69,6 +69,7 @@ def fetch_amazon_data(asin):
             features = []
             if item.item_info and item.item_info.features and item.item_info.features.display_values:
                 features = item.item_info.features.display_values
+                features = features[:3]  # 最初の3件のみ表示
 
             return title, price, image_url, features
         else:
@@ -80,7 +81,10 @@ def fetch_amazon_data(asin):
 def fetch_sakura_checker_rating(asin):
     url = f"https://sakura-checker.jp/search/{asin}/"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"),
+        "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://sakura-checker.jp/"
     }
     try:
         r = requests.get(url, headers=headers)
@@ -89,23 +93,19 @@ def fetch_sakura_checker_rating(asin):
             return None
         
         soup = BeautifulSoup(r.text, "html.parser")
-        # "item-rv-lv" を含むクラスを持つpタグを探す
-        p_tag = soup.find("p", class_=lambda c: c and "item-rv-lv" in c)
-        
-        if not p_tag:
-            print("サクラチェッカー評価Pタグが見つかりませんでした。")
+        # pタグでclassにitem-rv-lvを含みimgタグがある箇所を直接CSSセレクタで取得
+        img_tag = soup.select_one('p.item-rv-lv img')
+        if not img_tag:
+            print("サクラチェッカー評価のimgタグが見つかりませんでした。")
             return None
 
-        img_tag = p_tag.find("img")
-        if img_tag and 'src' in img_tag.attrs:
+        if 'src' in img_tag.attrs:
             img_src = img_tag['src']  # 例：/images/rv_level01.png
             rating_url = "https://sakura-checker.jp" + img_src
-            # 01~04のいずれかであればそのまま返す
             if any(level in rating_url for level in ["rv_level01.png", "rv_level02.png", "rv_level03.png", "rv_level04.png"]):
                 return rating_url
 
-        # 該当の評価が見つからなかった場合
-        print("サクラチェッカー評価イメージが見つかりませんでした。")
+        print("サクラチェッカー評価イメージが判別できませんでした。")
         return None
     except Exception as e:
         print(f"サクラチェッカー評価取得エラー: {e}")
