@@ -2,12 +2,12 @@ import os
 import discord
 import re
 import requests
-from datetime import datetime
 from flask import Flask
 import threading
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
+from datetime import datetime, timedelta
 
 # ===============================
 # HTTPサーバーのセットアップ
@@ -19,8 +19,7 @@ def health_check():
     return "OK", 200
 
 def run_http_server():
-    port = int(os.getenv("PORT", "8000"))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=8000)
 
 http_thread = threading.Thread(target=run_http_server)
 http_thread.daemon = True
@@ -60,11 +59,13 @@ def fetch_amazon_data(asin):
 
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
+
             title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
-            price = (item.offers.listings[0].price.display_amount 
-                     if item.offers and item.offers.listings and item.offers.listings[0].price 
+            price = (item.offers.listings[0].price.display_amount
+                     if item.offers and item.offers.listings and item.offers.listings[0].price
                      else "価格情報なし")
             image_url = item.images.primary.large.url if item.images and item.images.primary else ""
+
             features = []
             if item.item_info and item.item_info.features and item.item_info.features.display_values:
                 features = item.item_info.features.display_values[:3]
@@ -72,8 +73,7 @@ def fetch_amazon_data(asin):
             return title, price, image_url, features
         else:
             return None, None, None, None
-    except Exception as e:
-        print(f"Amazon情報取得エラー: {e}")
+    except Exception:
         return None, None, None, None
 
 def extract_asin(url):
@@ -83,8 +83,7 @@ def extract_asin(url):
         if asin_match:
             return asin_match.group(1)
         return None
-    except Exception as e:
-        print(f"ASIN抽出エラー: {e}")
+    except Exception:
         return None
 
 intents = discord.Intents.default()
@@ -104,39 +103,45 @@ async def on_message(message):
     if not urls:
         return
 
-    checking_message = await message.channel.send("リンクを確認中です...🔍")
-    for url in urls:
-        asin = extract_asin(url)
-        if not asin:
+    checking_message = None
+    try:
+        checking_message = await message.channel.send("リンクを確認中です...🔍")
+        for url in urls:
+            asin = extract_asin(url)
+            if not asin:
+                await message.channel.send("ASINが取得できませんでした。❌")
+                continue
+
+            title, price, image_url, features = fetch_amazon_data(asin)
+            if title and price and image_url:
+                affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
+
+                # 現在のUTC時間を取得
+                now_utc = datetime.utcnow()
+                # JSTはUTC+9時間
+                jst = now_utc + timedelta(hours=9)
+                time_str = jst.strftime("%Y/%m/%d %H:%M")
+
+                # 価格の後ろに日時を付与
+                description_text = f"**価格**: {price} （{time_str}時点）\n"
+
+                if features:
+                    bullet_points = "\n".join([f"- {f}" for f in features])
+                    description_text += f"\n**特徴**:\n{bullet_points}\n"
+
+                embed = discord.Embed(
+                    title=title,
+                    url=affiliate_url,
+                    description=description_text,
+                    color=discord.Color.blue()
+                )
+                embed.set_thumbnail(url=image_url)
+
+                await message.channel.send(embed=embed)
+            else:
+                await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
+    except Exception:
+        pass
+    finally:
+        if checking_message:
             await checking_message.delete()
-            await message.channel.send("ASINが取得できませんでした。❌")
-            return
-
-        title, price, image_url, features = fetch_amazon_data(asin)
-        if title and price and image_url:
-            affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
-
-            # 現在時刻を取得 (JSTなら環境次第だが、ここでは現状のサーバータイムを使用)
-            now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
-            # 価格の後ろに日時付与
-            description_text = f"**価格**: {price} （{now_str}時点）\n"
-
-            if features:
-                bullet_points = "\n".join([f"- {f}" for f in features])
-                description_text += f"\n**特徴**:\n{bullet_points}\n"
-
-            embed = discord.Embed(
-                title=title,
-                url=affiliate_url,
-                description=description_text,
-                color=discord.Color.blue()
-            )
-            embed.set_thumbnail(url=image_url)
-
-            await checking_message.delete()
-            await message.channel.send(embed=embed)
-        else:
-            await checking_message.delete()
-            await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
-
-client.run(TOKEN)
