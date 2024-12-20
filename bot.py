@@ -7,6 +7,9 @@ import threading
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
+from bs4 import BeautifulSoup
+import imgkit
+import tempfile
 
 # ===============================
 # HTTPサーバーのセットアップ
@@ -80,6 +83,40 @@ def fetch_amazon_data(asin):
         return None, None, None, None
 
 # ===============================
+# サクラチェッカー情報取得関数
+# ===============================
+def fetch_sakura_checker_image(asin):
+    url = f"https://sakura-checker.jp/search/{asin}/"
+    try:
+        r = requests.get(url)
+        if r.status_code != 200:
+            print(f"サクラチェッカーへのアクセスエラー: {r.status_code}")
+            return None
+        
+        soup = BeautifulSoup(r.text, "html.parser")
+        div = soup.find("div", class_="item-review-box")
+        if div:
+            html_content = div.prettify()
+
+            # 一時ファイルに画像生成
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp_name = tmp.name
+            # wkhtmltoimageを使ってHTMLをPNGに変換
+            # imgkitのオプション: "--quiet"でログ非表示なども可
+            options = {
+                "format": "png",
+                "encoding": "UTF-8"
+            }
+            imgkit.from_string(html_content, tmp_name, options=options)
+            return tmp_name
+        else:
+            print("item-review-boxが見つかりませんでした")
+            return None
+    except Exception as e:
+        print(f"サクラチェッカー画像取得エラー: {e}")
+        return None
+
+# ===============================
 # ASINを抽出する関数
 # ===============================
 def extract_asin(url):
@@ -122,7 +159,6 @@ async def on_message(message):
 
         title, price, image_url, features = fetch_amazon_data(asin)
         if title and price and image_url:
-            # アフィリエイトリンク生成
             affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
 
             description_text = f"**価格**: {price}\n"
@@ -138,7 +174,17 @@ async def on_message(message):
                 color=discord.Color.blue()
             )
             embed.set_thumbnail(url=image_url)
-            await message.channel.send(embed=embed)
+
+            # サクラチェッカー情報取得
+            sakura_image_path = fetch_sakura_checker_image(asin)
+            if sakura_image_path:
+                await message.channel.send(embed=embed)
+                await message.channel.send(file=discord.File(sakura_image_path, filename="sakura_checker.png"))
+                # 送信後、画像ファイルは削除しても良い(必要なら)
+                os.remove(sakura_image_path)
+            else:
+                # サクラチェッカー情報が取得できなかった場合はエンベッドのみ送信
+                await message.channel.send(embed=embed)
         else:
             await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
 
