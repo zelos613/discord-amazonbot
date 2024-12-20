@@ -1,8 +1,4 @@
 discord.py
-requests
-boto3
-Flask
-python-dotenv
-certifi
-six
-python-dateutil
+flask
+amazon-paapi
+
