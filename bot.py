@@ -3,9 +3,28 @@ import discord
 from discord.ext import commands
 import re
 import requests
+from flask import Flask
+import threading
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
+
+# ===============================
+# HTTPサーバーのセットアップ
+# ===============================
+app = Flask(__name__)
+
+@app.route("/")
+def health_check():
+    return "OK", 200
+
+def run_http_server():
+    app.run(host="0.0.0.0", port=8000)
+
+# HTTPサーバーをバックグラウンドで実行
+http_thread = threading.Thread(target=run_http_server)
+http_thread.daemon = True
+http_thread.start()
 
 # ===============================
 # Botの設定
