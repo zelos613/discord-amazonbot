@@ -1,20 +1,18 @@
-# ベースイメージとしてPython 3.9を使用
+# ベースイメージの指定
 FROM python:3.9-slim
 
 # 作業ディレクトリを設定
 WORKDIR /app
 
-# 必要なPythonパッケージをインストールするためのファイルをコピー
-COPY requirements.txt .
-
-# パッケージをインストール
-RUN pip install --no-cache-dir -r requirements.txt
-
-# アプリケーションコードをコンテナにコピー
+# 必要なファイルをコンテナ内にコピー
+COPY requirements.txt requirements.txt
 COPY . .
 
-# ポート8000を公開（HTTPサーバー用）
+# 依存ライブラリのインストール
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Flaskのポートを公開
 EXPOSE 8000
 
-# コンテナ起動時に実行するコマンドを指定
-CMD ["python", "bot.py"]
+# Botの起動
+CMD ["python", "your_script_name.py"]
