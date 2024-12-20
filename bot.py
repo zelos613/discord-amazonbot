@@ -20,7 +20,6 @@ def health_check():
 def run_http_server():
     app.run(host="0.0.0.0", port=8000)
 
-# HTTPサーバーをバックグラウンドで実行
 http_thread = threading.Thread(target=run_http_server)
 http_thread.daemon = True
 http_thread.start()
@@ -52,21 +51,33 @@ def fetch_amazon_data(asin):
             partner_type=PartnerType.ASSOCIATES,
             marketplace="www.amazon.co.jp",
             item_ids=[asin],
-            resources=["ItemInfo.Title", "Offers.Listings.Price", "Images.Primary.Large"]
+            resources=[
+                "ItemInfo.Title",
+                "Offers.Listings.Price",
+                "Images.Primary.Large",
+                "ItemInfo.Features"
+            ]
         )
         response = api_client.get_items(request)
 
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
             title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
-            price = item.offers.listings[0].price.display_amount if item.offers and item.offers.listings else "価格情報なし"
+            price = (item.offers.listings[0].price.display_amount 
+                     if item.offers and item.offers.listings and item.offers.listings[0].price 
+                     else "価格情報なし")
             image_url = item.images.primary.large.url if item.images and item.images.primary else ""
-            return title, price, image_url
+
+            features = []
+            if item.item_info and item.item_info.features and item.item_info.features.display_values:
+                features = item.item_info.features.display_values
+
+            return title, price, image_url, features
         else:
-            return None, None, None
+            return None, None, None, None
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
-        return None, None, None
+        return None, None, None, None
 
 # ===============================
 # ASINを抽出する関数
@@ -109,15 +120,21 @@ async def on_message(message):
             await message.channel.send("ASINが取得できませんでした。❌")
             continue
 
-        title, price, image_url = fetch_amazon_data(asin)
+        title, price, image_url, features = fetch_amazon_data(asin)
         if title and price and image_url:
             # アフィリエイトリンク生成
             affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
 
+            description_text = f"**価格**: {price}\n"
+            if features:
+                bullet_points = "\n".join([f"- {f}" for f in features])
+                description_text += f"\n**特徴**:\n{bullet_points}\n"
+            description_text += "\n商品情報を整理しました！✨"
+
             embed = discord.Embed(
                 title=title,
-                url=affiliate_url,  # ここをもともとのURLではなくアフィリエイトURLに
-                description=f"**価格**: {price}\n\n商品情報を整理しました！✨",
+                url=affiliate_url,
+                description=description_text,
                 color=discord.Color.blue()
             )
             embed.set_thumbnail(url=image_url)
@@ -125,5 +142,4 @@ async def on_message(message):
         else:
             await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
 
-# Botの起動
 client.run(TOKEN)
