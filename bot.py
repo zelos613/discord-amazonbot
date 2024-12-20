@@ -36,9 +36,6 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 # 正規表現: Amazonリンクの検出
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/[\w\-/\?=&%\.]+)"
 
-# ===============================
-# 商品情報を取得する関数
-# ===============================
 def fetch_amazon_data(asin):
     try:
         api_client = DefaultApi(
@@ -80,45 +77,40 @@ def fetch_amazon_data(asin):
         print(f"Amazon情報取得エラー: {e}")
         return None, None, None, None
 
-# ===============================
-# サクラチェッカー評価取得関数
-# ===============================
 def fetch_sakura_checker_rating(asin):
     url = f"https://sakura-checker.jp/search/{asin}/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+    }
     try:
-        r = requests.get(url)
+        r = requests.get(url, headers=headers)
         if r.status_code != 200:
             print(f"サクラチェッカーへのアクセスエラー: {r.status_code}")
             return None
         
         soup = BeautifulSoup(r.text, "html.parser")
-        # pタグで classにitem-rv-lvを含むものを検索
-        p_tag = soup.find("p", class_=re.compile("item-rv-lv"))
-        if p_tag:
-            img_tag = p_tag.find("img")
-            if img_tag and 'src' in img_tag.attrs:
-                img_src = img_tag['src']  # 例：/images/rv_level01.png
-                # フルURL化
-                rating_url = "https://sakura-checker.jp" + img_src
-                if "rv_level01.png" in rating_url:
-                    return rating_url
-                elif "rv_level02.png" in rating_url:
-                    return rating_url
-                elif "rv_level03.png" in rating_url:
-                    return rating_url
-                elif "rv_level04.png" in rating_url:
-                    return rating_url
+        # "item-rv-lv" を含むクラスを持つpタグを探す
+        p_tag = soup.find("p", class_=lambda c: c and "item-rv-lv" in c)
+        
+        if not p_tag:
+            print("サクラチェッカー評価Pタグが見つかりませんでした。")
+            return None
+
+        img_tag = p_tag.find("img")
+        if img_tag and 'src' in img_tag.attrs:
+            img_src = img_tag['src']  # 例：/images/rv_level01.png
+            rating_url = "https://sakura-checker.jp" + img_src
+            # 01~04のいずれかであればそのまま返す
+            if any(level in rating_url for level in ["rv_level01.png", "rv_level02.png", "rv_level03.png", "rv_level04.png"]):
+                return rating_url
+
         # 該当の評価が見つからなかった場合
+        print("サクラチェッカー評価イメージが見つかりませんでした。")
         return None
     except Exception as e:
         print(f"サクラチェッカー評価取得エラー: {e}")
         return None
 
-import re
-
-# ===============================
-# ASINを抽出する関数
-# ===============================
 def extract_asin(url):
     try:
         parsed_url = requests.get(url, allow_redirects=True).url  # 短縮URLを展開
@@ -130,9 +122,6 @@ def extract_asin(url):
         print(f"ASIN抽出エラー: {e}")
         return None
 
-# ===============================
-# Discord Bot本体
-# ===============================
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
@@ -167,7 +156,6 @@ async def on_message(message):
                 bullet_points = "\n".join([f"- {f}" for f in features])
                 description_text += f"\n**特徴**:\n{bullet_points}\n"
 
-            # サクラチェッカー評価取得
             sakura_rating_url = fetch_sakura_checker_rating(asin)
             if sakura_rating_url:
                 description_text += "\nサクラチェッカーでの評価はこちら！"
@@ -181,8 +169,7 @@ async def on_message(message):
                 color=discord.Color.blue()
             )
             embed.set_thumbnail(url=image_url)
-            
-            # サクラチェッカー評価画像があれば、エンベッドのimageに設定
+
             if sakura_rating_url:
                 embed.set_image(url=sakura_rating_url)
 
