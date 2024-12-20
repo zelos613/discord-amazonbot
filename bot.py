@@ -52,7 +52,7 @@ def fetch_amazon_data(asin):
             partner_type=PartnerType.ASSOCIATES,
             marketplace="www.amazon.co.jp",
             item_ids=[asin],
-            resources=["ItemInfo.Title", "Offers.Listings.Price", "Images.Primary.Large"]
+            resources=["ItemInfo.Title", "Offers.Listings.Price", "Images.Primary.Large", "ItemInfo.CustomerReviews.StarRating"]
         )
         response = api_client.get_items(request)
 
@@ -61,12 +61,13 @@ def fetch_amazon_data(asin):
             title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
             price = item.offers.listings[0].price.display_amount if item.offers and item.offers.listings else "価格情報なし"
             image_url = item.images.primary.large.url if item.images and item.images.primary else ""
-            return title, price, image_url
+            rating = item.item_info.customer_reviews.star_rating.display_value if item.item_info and item.item_info.customer_reviews and item.item_info.customer_reviews.star_rating else "評価情報なし"
+            return title, price, image_url, rating
         else:
-            return None, None, None
+            return None, None, None, None
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
-        return None, None, None
+        return None, None, None, None
 
 # ===============================
 # ASINを抽出する関数
@@ -109,12 +110,12 @@ async def on_message(message):
             await message.channel.send("ASINが取得できませんでした。❌")
             continue
 
-        title, price, image_url = fetch_amazon_data(asin)
-        if title and price and image_url:
+        title, price, image_url, rating = fetch_amazon_data(asin)
+        if title and price and image_url and rating:
             embed = discord.Embed(
                 title=title,
                 url=url,
-                description=f"**価格**: {price}\n\n商品情報を整理しました！✨",
+                description=f"**価格**: {price}\n**評価**: {rating} / 5\n\n商品情報を整理しました！✨",
                 color=discord.Color.blue()
             )
             embed.set_thumbnail(url=image_url)
