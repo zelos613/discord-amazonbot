@@ -1,6 +1,5 @@
 import os
 import discord
-from discord.ext import commands
 import re
 import requests
 from flask import Flask
@@ -27,30 +26,27 @@ http_thread.daemon = True
 http_thread.start()
 
 # ===============================
-# Botの設定
+# 環境変数の設定
 # ===============================
-intents = discord.Intents.default()
-intents.message_content = True  # メッセージ内容の読み取りを有効化
-bot = commands.Bot(command_prefix="!", intents=intents)
+TOKEN = os.getenv('TOKEN')
+AMAZON_ACCESS_KEY = os.getenv('AMAZON_ACCESS_KEY')
+AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')
+AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 
-# Amazon PA-API設定
-AMAZON_ASSOCIATE_TAG = os.getenv("AMAZON_ASSOCIATE_TAG")
-AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY")
-AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY")
+# 正規表現: Amazonリンクの検出
+AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/[\w\-/\?=&%\.]+)"
 
-# Amazon APIクライアントの初期化
-def get_amazon_client():
-    return DefaultApi(
-        access_key=AMAZON_ACCESS_KEY,
-        secret_key=AMAZON_SECRET_KEY,
-        host="webservices.amazon.co.jp",
-        region="us-west-2"
-    )
-
+# ===============================
 # 商品情報を取得する関数
-def get_amazon_product_info(asin):
+# ===============================
+def fetch_amazon_data(asin):
     try:
-        api_client = get_amazon_client()
+        api_client = DefaultApi(
+            access_key=AMAZON_ACCESS_KEY,
+            secret_key=AMAZON_SECRET_KEY,
+            host="webservices.amazon.co.jp",
+            region="us-west-2"
+        )
         request = GetItemsRequest(
             partner_tag=AMAZON_ASSOCIATE_TAG,
             partner_type=PartnerType.ASSOCIATES,
@@ -62,18 +58,19 @@ def get_amazon_product_info(asin):
 
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
-            return {
-                "title": item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし",
-                "price": item.offers.listings[0].price.display_amount if item.offers and item.offers.listings else "価格情報なし",
-                "image_url": item.images.primary.large.url if item.images and item.images.primary else "",
-            }
+            title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
+            price = item.offers.listings[0].price.display_amount if item.offers and item.offers.listings else "価格情報なし"
+            image_url = item.images.primary.large.url if item.images and item.images.primary else ""
+            return title, price, image_url
         else:
-            return None
+            return None, None, None
     except Exception as e:
-        print(f"Error fetching product info: {e}")
-        return None
+        print(f"Amazon情報取得エラー: {e}")
+        return None, None, None
 
-# メッセージからASINを抽出する関数
+# ===============================
+# ASINを抽出する関数
+# ===============================
 def extract_asin(url):
     try:
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", url)
@@ -81,54 +78,48 @@ def extract_asin(url):
             return asin_match.group(1)
         return None
     except Exception as e:
-        print(f"Error extracting ASIN: {e}")
+        print(f"ASIN抽出エラー: {e}")
         return None
 
 # ===============================
-# イベント処理
+# Discord Bot本体
 # ===============================
-@bot.event
-async def on_ready():
-    print(f"Bot connected as {bot.user}")
+intents = discord.Intents.default()
+intents.message_content = True
+client = discord.Client(intents=intents)
 
-@bot.event
+@client.event
+async def on_ready():
+    print(f'Botがログインしました: {client.user}')
+
+@client.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    print(f"Received message: {message.content}")  # デバッグ用ログ
+    urls = re.findall(AMAZON_URL_REGEX, message.content)
+    if not urls:
+        return
 
-    amazon_urls = re.findall(r"https?://(www\.)?amazon\.(com|co\.jp)/[^\s]+", message.content)
-    if amazon_urls:
-        url = amazon_urls[0][0]  # 最初のAmazonリンクを処理
-        await message.channel.send("Amazonリンクを検出しました！商品情報を取得しています...")
+    for url in urls:
+        await message.channel.send("リンクを確認中です...🔍")
+        asin = extract_asin(url)
+        if not asin:
+            await message.channel.send("ASINが取得できませんでした。❌")
+            continue
 
-        try:
-            asin = extract_asin(url)
-            if not asin:
-                await message.channel.send("ASINが取得できませんでした。")
-                return
+        title, price, image_url = fetch_amazon_data(asin)
+        if title and price and image_url:
+            embed = discord.Embed(
+                title=title,
+                url=url,
+                description=f"**価格**: {price}\n\n商品情報を整理しました！✨",
+                color=discord.Color.blue()
+            )
+            embed.set_thumbnail(url=image_url)
+            await message.channel.send(embed=embed)
+        else:
+            await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
 
-            product_info = get_amazon_product_info(asin)
-            if product_info:
-                embed = discord.Embed(
-                    title=product_info["title"],
-                    url=url,
-                    description="商品情報を整理しました✨️",
-                    color=0x00ff00
-                )
-                embed.add_field(name="価格", value=product_info["price"], inline=False)
-                if product_info["image_url"]:
-                    embed.set_image(url=product_info["image_url"])
-                await message.channel.send(embed=embed)
-            else:
-                await message.channel.send("商品情報を取得できませんでした。")
-        except Exception as e:
-            print(f"Error: {e}")
-            await message.channel.send("エラーが発生しました。")
-
-# ===============================
 # Botの起動
-# ===============================
-TOKEN = os.getenv("TOKEN")
-bot.run(TOKEN)
+client.run(TOKEN)
