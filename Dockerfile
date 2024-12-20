@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y \
     gcc \
     libxml2-dev \
     libxslt1-dev \
+    chromium \
+    chromium-driver \
+    fonts-liberation \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
