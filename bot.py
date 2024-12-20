@@ -3,74 +3,44 @@ import discord
 from discord.ext import commands
 import re
 import requests
-from flask import Flask
-import threading
-import time
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
 
 # ===============================
-# HTTPサーバーのセットアップ
-# ===============================
-app = Flask(__name__)
-
-@app.route("/")
-def health_check():
-    return "OK", 200
-
-def run_http_server():
-    app.run(host="0.0.0.0", port=8000)
-
-# HTTPサーバーをバックグラウンドで実行
-http_thread = threading.Thread(target=run_http_server)
-http_thread.daemon = True
-http_thread.start()
-
-# ===============================
-# 環境変数から設定を取得
-# ===============================
-TOKEN = os.getenv("TOKEN")
-AFFILIATE_ID = os.getenv("AMAZON_ASSOCIATE_TAG")
-AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY")
-AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY")
-TIMEOUT = 20  # タイムアウト時間（秒）
-
-# ===============================
-# Discord Botの準備
+# Botの設定
 # ===============================
 intents = discord.Intents.default()
-intents.message_content = True
+intents.message_content = True  # メッセージ内容の読み取りを有効化
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ===============================
-# Amazon PA-APIを使った商品情報取得
-# ===============================
+# Amazon PA-API設定
+AMAZON_ASSOCIATE_TAG = os.getenv("AMAZON_ASSOCIATE_TAG")
+AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY")
+AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY")
+
+# Amazon APIクライアントの初期化
+def get_amazon_client():
+    return DefaultApi(
+        access_key=AMAZON_ACCESS_KEY,
+        secret_key=AMAZON_SECRET_KEY,
+        host="webservices.amazon.co.jp",
+        region="us-west-2"
+    )
+
+# 商品情報を取得する関数
 def get_amazon_product_info(asin):
     try:
-        # PA-APIクライアント設定
-        api = DefaultApi(
-            access_key=AMAZON_ACCESS_KEY,
-            secret_key=AMAZON_SECRET_KEY,
-            host="webservices.amazon.co.jp",
-            region="us-west-2"
-        )
-
-        # PA-APIリクエストの作成
+        api_client = get_amazon_client()
         request = GetItemsRequest(
-            partner_tag=AFFILIATE_ID,
+            partner_tag=AMAZON_ASSOCIATE_TAG,
             partner_type=PartnerType.ASSOCIATES,
             marketplace="www.amazon.co.jp",
             item_ids=[asin],
-            resources=[
-                "ItemInfo.Title",
-                "Offers.Listings.Price",
-                "Images.Primary.Large"
-            ]
+            resources=["ItemInfo.Title", "Offers.Listings.Price", "Images.Primary.Large"]
         )
+        response = api_client.get_items(request)
 
-        # リクエスト送信
-        response = api.get_items(request)
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
             return {
@@ -81,61 +51,65 @@ def get_amazon_product_info(asin):
         else:
             return None
     except Exception as e:
-        print(f"Error fetching product info via PA-API: {e}")
+        print(f"Error fetching product info: {e}")
         return None
 
-# ===============================
-# ASINを抽出する関数
-# ===============================
+# メッセージからASINを抽出する関数
 def extract_asin(url):
     try:
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", url)
         if asin_match:
             return asin_match.group(1)
-        else:
-            return None
+        return None
     except Exception as e:
         print(f"Error extracting ASIN: {e}")
         return None
 
 # ===============================
-# メッセージイベントの処理
+# イベント処理
 # ===============================
+@bot.event
+async def on_ready():
+    print(f"Bot connected as {bot.user}")
+
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    urls = re.findall(r"https?://[\w\-_.~!*'();:@&=+$,/?#%[\]]+", message.content)
-    amazon_urls = [url for url in urls if re.search(r"amazon\\.com|amazon\\.co\\.jp|amzn\\.asia", url)]
-    if not amazon_urls:
-        return
+    print(f"Received message: {message.content}")  # デバッグ用ログ
 
-    url = amazon_urls[0]
-    asin = extract_asin(url)
+    amazon_urls = re.findall(r"https?://(www\.)?amazon\.(com|co\.jp)/[^\s]+", message.content)
+    if amazon_urls:
+        url = amazon_urls[0][0]  # 最初のAmazonリンクを処理
+        await message.channel.send("Amazonリンクを検出しました！商品情報を取得しています...")
 
-    if not asin:
-        await message.channel.send("ASINが取得できませんでした。")
-        return
+        try:
+            asin = extract_asin(url)
+            if not asin:
+                await message.channel.send("ASINが取得できませんでした。")
+                return
 
-    affiliate_link = f"{url}?tag={AFFILIATE_ID}"
-    product_info = get_amazon_product_info(asin)
-
-    if product_info:
-        embed = discord.Embed(
-            title=product_info["title"],
-            url=affiliate_link,
-            description="商品情報を整理しました✨️",
-            color=0x00ff00
-        )
-        embed.add_field(name="価格", value=product_info["price"], inline=False)
-        if product_info["image_url"]:
-            embed.set_image(url=product_info["image_url"])
-        await message.channel.send(embed=embed)
-    else:
-        await message.channel.send("商品情報が見つかりませんでした。")
+            product_info = get_amazon_product_info(asin)
+            if product_info:
+                embed = discord.Embed(
+                    title=product_info["title"],
+                    url=url,
+                    description="商品情報を整理しました✨️",
+                    color=0x00ff00
+                )
+                embed.add_field(name="価格", value=product_info["price"], inline=False)
+                if product_info["image_url"]:
+                    embed.set_image(url=product_info["image_url"])
+                await message.channel.send(embed=embed)
+            else:
+                await message.channel.send("商品情報を取得できませんでした。")
+        except Exception as e:
+            print(f"Error: {e}")
+            await message.channel.send("エラーが発生しました。")
 
 # ===============================
 # Botの起動
 # ===============================
+TOKEN = os.getenv("TOKEN")
 bot.run(TOKEN)
