@@ -1,29 +1,20 @@
-# Dockerfile
+# ベースイメージとしてPython 3.9を使用
 FROM python:3.9-slim
 
-# 作業ディレクトリの設定
+# 作業ディレクトリを設定
 WORKDIR /app
 
-# 必要なパッケージをインストール
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libxml2 \
-    libxml2-dev \
-    libxslt1-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# 依存関係をコピー
+# 必要なPythonパッケージをインストールするためのファイルをコピー
 COPY requirements.txt .
 
-# Pythonパッケージのインストール
+# パッケージをインストール
 RUN pip install --no-cache-dir -r requirements.txt
 
-# SDKをプロジェクトにコピー
-COPY paapi5_python_sdk ./paapi5_python_sdk
-
-# ソースコードをコピー
+# アプリケーションコードをコンテナにコピー
 COPY . .
 
-# Botを起動
+# ポート8000を公開（HTTPサーバー用）
+EXPOSE 8000
+
+# コンテナ起動時に実行するコマンドを指定
 CMD ["python", "bot.py"]
