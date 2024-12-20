@@ -52,44 +52,21 @@ def fetch_amazon_data(asin):
             partner_type=PartnerType.ASSOCIATES,
             marketplace="www.amazon.co.jp",
             item_ids=[asin],
-            resources=[
-                "ItemInfo.Title",
-                "Offers.Listings.Price",
-                "Images.Primary.Large",
-                "CustomerReviews.Count",
-                "CustomerReviews.StarRating",
-                "ItemInfo.Features"
-            ]
+            resources=["ItemInfo.Title", "Offers.Listings.Price", "Images.Primary.Large"]
         )
         response = api_client.get_items(request)
 
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
-
             title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
-            price = (item.offers.listings[0].price.display_amount 
-                     if item.offers and item.offers.listings and item.offers.listings[0].price 
-                     else "価格情報なし")
+            price = item.offers.listings[0].price.display_amount if item.offers and item.offers.listings else "価格情報なし"
             image_url = item.images.primary.large.url if item.images and item.images.primary else ""
-
-            # レビュー評価関連
-            star_rating = None
-            review_count = None
-            if item.customer_reviews:
-                star_rating = item.customer_reviews.star_rating if hasattr(item.customer_reviews, 'star_rating') else None
-                review_count = item.customer_reviews.count if hasattr(item.customer_reviews, 'count') else None
-
-            # 特徴（Bullet Points）
-            features = []
-            if item.item_info and item.item_info.features and item.item_info.features.display_values:
-                features = item.item_info.features.display_values
-
-            return title, price, image_url, star_rating, review_count, features
+            return title, price, image_url
         else:
-            return None, None, None, None, None, None
+            return None, None, None
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
-        return None, None, None, None, None, None
+        return None, None, None
 
 # ===============================
 # ASINを抽出する関数
@@ -132,24 +109,15 @@ async def on_message(message):
             await message.channel.send("ASINが取得できませんでした。❌")
             continue
 
-        title, price, image_url, star_rating, review_count, features = fetch_amazon_data(asin)
-
+        title, price, image_url = fetch_amazon_data(asin)
         if title and price and image_url:
-            description_text = f"**価格**: {price}\n"
-            if star_rating and review_count:
-                description_text += f"**評価**: ⭐{star_rating} / 5 （{review_count}件のレビュー）\n"
-
-            # 特徴があれば追加
-            if features:
-                bullet_points = "\n".join([f"- {f}" for f in features])
-                description_text += f"\n**特徴**:\n{bullet_points}\n"
-
-            description_text += "\n商品情報を整理しました！✨"
+            # アフィリエイトリンク生成
+            affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
 
             embed = discord.Embed(
                 title=title,
-                url=url,
-                description=description_text,
+                url=affiliate_url,  # ここをもともとのURLではなくアフィリエイトURLに
+                description=f"**価格**: {price}\n\n商品情報を整理しました！✨",
                 color=discord.Color.blue()
             )
             embed.set_thumbnail(url=image_url)
