@@ -1,22 +1,29 @@
-# ベースイメージの指定
+# ベースイメージ
 FROM python:3.9-slim
 
 # 作業ディレクトリを設定
 WORKDIR /app
 
-# 必要なファイルをコンテナ内にコピー
-COPY requirements.txt requirements.txt
-COPY paapi5_python_sdk /app/paapi5_python_sdk  # SDKフォルダをコピー
-COPY . .
+# 必要なパッケージをインストール
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libxml2-dev \
+    libxslt1-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# 依存ライブラリのインストール
+# 依存関係をコピーしてインストール
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# SDKをプロジェクトにコピー
+COPY paapi5_python_sdk ./paapi5_python_sdk
+
+# アプリケーションコードをコピー
+COPY . .
 
 # PYTHONPATHを設定
 ENV PYTHONPATH="/app"
 
-# Flaskのポートを公開
-EXPOSE 8000
-
-# Botの起動
+# アプリケーションの実行
 CMD ["python", "bot.py"]
