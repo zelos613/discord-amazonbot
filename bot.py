@@ -2,12 +2,12 @@ import os
 import discord
 import re
 import requests
+from datetime import datetime, timedelta
 from flask import Flask
 import threading
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
-from datetime import datetime, timedelta
 
 # ===============================
 # HTTPサーバーのセットアップ
@@ -19,7 +19,9 @@ def health_check():
     return "OK", 200
 
 def run_http_server():
-    app.run(host="0.0.0.0", port=8000)
+    # Koyeb用にPORT環境変数を使用
+    port = int(os.getenv("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port)
 
 http_thread = threading.Thread(target=run_http_server)
 http_thread.daemon = True
@@ -67,13 +69,15 @@ def fetch_amazon_data(asin):
             image_url = item.images.primary.large.url if item.images and item.images.primary else ""
 
             features = []
-            if item.item_info and item.item_info.features and item.item_info.features.display_values:
+            if (item.item_info and item.item_info.features and 
+                item.item_info.features.display_values):
                 features = item.item_info.features.display_values[:3]
 
             return title, price, image_url, features
         else:
             return None, None, None, None
-    except Exception:
+    except Exception as e:
+        print(f"Amazon情報取得エラー: {e}")
         return None, None, None, None
 
 def extract_asin(url):
@@ -83,7 +87,8 @@ def extract_asin(url):
         if asin_match:
             return asin_match.group(1)
         return None
-    except Exception:
+    except Exception as e:
+        print(f"ASIN抽出エラー: {e}")
         return None
 
 intents = discord.Intents.default()
@@ -116,13 +121,12 @@ async def on_message(message):
             if title and price and image_url:
                 affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
 
-                # 現在のUTC時間を取得
+                # 現在のUTC時間を取得しJSTに変換
                 now_utc = datetime.utcnow()
-                # JSTはUTC+9時間
                 jst = now_utc + timedelta(hours=9)
                 time_str = jst.strftime("%Y/%m/%d %H:%M")
 
-                # 価格の後ろに日時を付与
+                # 価格表示に日時付与
                 description_text = f"**価格**: {price} （{time_str}時点）\n"
 
                 if features:
@@ -140,8 +144,14 @@ async def on_message(message):
                 await message.channel.send(embed=embed)
             else:
                 await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"on_messageエラー: {e}")
     finally:
         if checking_message:
             await checking_message.delete()
+
+# TOKENが設定されていればBot起動、なければメッセージ表示のみ
+if TOKEN:
+    client.run(TOKEN)
+else:
+    print("TOKENが設定されていません。BOTは起動せず、Flaskサーバーのみ稼働します。")
