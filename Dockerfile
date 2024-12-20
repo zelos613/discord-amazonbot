@@ -17,4 +17,4 @@ RUN pip install ./paapi5_python_sdk  # ローカルSDKをインストール
 EXPOSE 8000
 
 # Botの起動
-CMD ["python", "your_script_name.py"]
+CMD ["python", "bot.py"]
