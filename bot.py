@@ -2,12 +2,16 @@ import os
 import discord
 import re
 import requests
+from datetime import datetime
 from flask import Flask
 import threading
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
 
+# ===============================
+# HTTPサーバーのセットアップ
+# ===============================
 app = Flask(__name__)
 
 @app.route("/")
@@ -15,19 +19,21 @@ def health_check():
     return "OK", 200
 
 def run_http_server():
-    port = int(os.getenv("PORT", "8000"))  # PORT環境変数を利用
+    port = int(os.getenv("PORT", "8000"))
     app.run(host="0.0.0.0", port=port)
 
 http_thread = threading.Thread(target=run_http_server)
 http_thread.daemon = True
 http_thread.start()
 
+# ===============================
+# 環境変数の設定
+# ===============================
 TOKEN = os.getenv('TOKEN')
 AMAZON_ACCESS_KEY = os.getenv('AMAZON_ACCESS_KEY')
 AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')
 AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 
-# Amazonリンクを検出する正規表現
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/[\w\-/\?=&%\.]+)"
 
 def fetch_amazon_data(asin):
@@ -67,7 +73,6 @@ def fetch_amazon_data(asin):
         else:
             return None, None, None, None
     except Exception as e:
-        # 最小限のログ出力
         print(f"Amazon情報取得エラー: {e}")
         return None, None, None, None
 
@@ -110,7 +115,12 @@ async def on_message(message):
         title, price, image_url, features = fetch_amazon_data(asin)
         if title and price and image_url:
             affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
-            description_text = f"**価格**: {price}\n"
+
+            # 現在時刻を取得 (JSTなら環境次第だが、ここでは現状のサーバータイムを使用)
+            now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+            # 価格の後ろに日時付与
+            description_text = f"**価格**: {price} （{now_str}時点）\n"
+
             if features:
                 bullet_points = "\n".join([f"- {f}" for f in features])
                 description_text += f"\n**特徴**:\n{bullet_points}\n"
@@ -129,7 +139,4 @@ async def on_message(message):
             await checking_message.delete()
             await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
 
-if TOKEN:
-    client.run(TOKEN)
-else:
-    print("TOKENが設定されていません。BOTは起動しません。")
+client.run(TOKEN)
