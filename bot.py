@@ -35,9 +35,6 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 # 正規表現: Amazonリンクの検出
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/[\w\-/\?=&%\.]+)"
 
-# ===============================
-# 商品情報を取得する関数
-# ===============================
 def fetch_amazon_data(asin):
     try:
         api_client = DefaultApi(
@@ -63,8 +60,8 @@ def fetch_amazon_data(asin):
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
             title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
-            price = (item.offers.listings[0].price.display_amount 
-                     if item.offers and item.offers.listings and item.offers.listings[0].price 
+            price = (item.offers.listings[0].price.display_amount
+                     if item.offers and item.offers.listings and item.offers.listings[0].price
                      else "価格情報なし")
             image_url = item.images.primary.large.url if item.images and item.images.primary else ""
 
@@ -76,32 +73,30 @@ def fetch_amazon_data(asin):
         else:
             return None, None, None, None
     except Exception as e:
-        print(f"Amazon情報取得エラー: {e}")
+        # ログを減らすためprintを抑制したり、必要最低限のログに留めます
+        # print(f"Amazon情報取得エラー: {e}")
         return None, None, None, None
 
-# ===============================
-# ASINを抽出する関数
-# ===============================
 def extract_asin(url):
     try:
-        parsed_url = requests.get(url, allow_redirects=True).url  # 短縮URLを展開
+        # timeoutを設定して応答がない場合早めに切る
+        parsed_url = requests.get(url, allow_redirects=True, timeout=5).url
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", parsed_url)
         if asin_match:
             return asin_match.group(1)
         return None
     except Exception as e:
-        print(f"ASIN抽出エラー: {e}")
+        # 過剰なログを避けるため最低限のログのみ
+        # print(f"ASIN抽出エラー: {e}")
         return None
 
-# ===============================
-# Discord Bot本体
-# ===============================
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
+    # 過剰なログを避けるためにprintを最低限に
     print(f'Botがログインしました: {client.user}')
 
 @client.event
@@ -113,35 +108,39 @@ async def on_message(message):
     if not urls:
         return
 
-    for url in urls:
+    # タイムアウトや処理中エラーでログが膨らむ可能性があるためエラーハンドリング
+    checking_message = None
+    try:
         checking_message = await message.channel.send("リンクを確認中です...🔍")
-        asin = extract_asin(url)
-        if not asin:
+        for url in urls:
+            asin = extract_asin(url)
+            if not asin:
+                await message.channel.send("ASINが取得できませんでした。❌")
+                continue
+
+            title, price, image_url, features = fetch_amazon_data(asin)
+            if title and price and image_url:
+                affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
+
+                description_text = f"**価格**: {price}\n"
+                if features:
+                    bullet_points = "\n".join([f"- {f}" for f in features])
+                    description_text += f"\n**特徴**:\n{bullet_points}\n"
+
+                embed = discord.Embed(
+                    title=title,
+                    url=affiliate_url,
+                    description=description_text,
+                    color=discord.Color.blue()
+                )
+                embed.set_thumbnail(url=image_url)
+                await message.channel.send(embed=embed)
+            else:
+                await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
+    except Exception:
+        pass
+    finally:
+        if checking_message:
             await checking_message.delete()
-            await message.channel.send("ASINが取得できませんでした。❌")
-            continue
-
-        title, price, image_url, features = fetch_amazon_data(asin)
-        if title and price and image_url:
-            affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
-
-            description_text = f"**価格**: {price}\n"
-            if features:
-                bullet_points = "\n".join([f"- {f}" for f in features])
-                description_text += f"\n**特徴**:\n{bullet_points}\n"
-
-            embed = discord.Embed(
-                title=title,
-                url=affiliate_url,
-                description=description_text,
-                color=discord.Color.blue()
-            )
-            embed.set_thumbnail(url=image_url)
-
-            await checking_message.delete()
-            await message.channel.send(embed=embed)
-        else:
-            await checking_message.delete()
-            await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
 
 client.run(TOKEN)
