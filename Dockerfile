@@ -6,7 +6,7 @@ WORKDIR /app
 
 # 必要なファイルをコンテナ内にコピー
 COPY requirements.txt requirements.txt
-COPY ./paapi5_python_sdk /app/paapi5_python_sdk  # SDKフォルダをコピー
+COPY paapi5_python_sdk /app/paapi5_python_sdk  # SDKフォルダをコピー
 COPY . .
 
 # 依存ライブラリのインストール
