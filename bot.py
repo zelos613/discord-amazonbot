@@ -35,6 +35,9 @@ AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 # 正規表現: Amazonリンクの検出
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/[\w\-/\?=&%\.]+)"
 
+# ===============================
+# 商品情報を取得する関数
+# ===============================
 def fetch_amazon_data(asin):
     try:
         api_client = DefaultApi(
@@ -52,13 +55,16 @@ def fetch_amazon_data(asin):
                 "ItemInfo.Title",
                 "Offers.Listings.Price",
                 "Images.Primary.Large",
-                "ItemInfo.Features"
+                "ItemInfo.Features",
+                "CustomerReviews.Count",
+                "CustomerReviews.StarRating"
             ]
         )
         response = api_client.get_items(request)
 
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
+
             title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
             price = (item.offers.listings[0].price.display_amount
                      if item.offers and item.offers.listings and item.offers.listings[0].price
@@ -69,34 +75,41 @@ def fetch_amazon_data(asin):
             if item.item_info and item.item_info.features and item.item_info.features.display_values:
                 features = item.item_info.features.display_values[:3]  # 最初の3件まで
 
-            return title, price, image_url, features
-        else:
-            return None, None, None, None
-    except Exception as e:
-        # ログを減らすためprintを抑制したり、必要最低限のログに留めます
-        # print(f"Amazon情報取得エラー: {e}")
-        return None, None, None, None
+            # 評価・レビュー数取得
+            star_rating = None
+            review_count = None
+            if item.customer_reviews:
+                star_rating = item.customer_reviews.star_rating if hasattr(item.customer_reviews, 'star_rating') else None
+                review_count = item.customer_reviews.count if hasattr(item.customer_reviews, 'count') else None
 
+            return title, price, image_url, features, star_rating, review_count
+        else:
+            return None, None, None, None, None, None
+    except Exception as e:
+        return None, None, None, None, None, None
+
+# ===============================
+# ASINを抽出する関数
+# ===============================
 def extract_asin(url):
     try:
-        # timeoutを設定して応答がない場合早めに切る
-        parsed_url = requests.get(url, allow_redirects=True, timeout=5).url
+        parsed_url = requests.get(url, allow_redirects=True, timeout=5).url  # timeoutで負荷軽減
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", parsed_url)
         if asin_match:
             return asin_match.group(1)
         return None
-    except Exception as e:
-        # 過剰なログを避けるため最低限のログのみ
-        # print(f"ASIN抽出エラー: {e}")
+    except Exception:
         return None
 
+# ===============================
+# Discord Bot本体
+# ===============================
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
-    # 過剰なログを避けるためにprintを最低限に
     print(f'Botがログインしました: {client.user}')
 
 @client.event
@@ -108,7 +121,6 @@ async def on_message(message):
     if not urls:
         return
 
-    # タイムアウトや処理中エラーでログが膨らむ可能性があるためエラーハンドリング
     checking_message = None
     try:
         checking_message = await message.channel.send("リンクを確認中です...🔍")
@@ -118,11 +130,21 @@ async def on_message(message):
                 await message.channel.send("ASINが取得できませんでした。❌")
                 continue
 
-            title, price, image_url, features = fetch_amazon_data(asin)
+            title, price, image_url, features, star_rating, review_count = fetch_amazon_data(asin)
             if title and price and image_url:
                 affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
 
-                description_text = f"**価格**: {price}\n"
+                # Amazonっぽい評価表示を再現
+                # 例：評価: ⭐4.3 / 5 | レビュー数: 123件
+                # 同一行に価格・評価・レビュー数を並べる
+                line = f"**価格**: {price}"
+                if star_rating is not None and review_count is not None and review_count > 0:
+                    line += f" | **評価**: ⭐{star_rating:.1f}/5 | **レビュー数**: {review_count}件"
+                elif star_rating is not None:
+                    # レビュー数がない場合でも評価だけ表示
+                    line += f" | **評価**: ⭐{star_rating:.1f}/5"
+
+                description_text = line + "\n"
                 if features:
                     bullet_points = "\n".join([f"- {f}" for f in features])
                     description_text += f"\n**特徴**:\n{bullet_points}\n"
@@ -134,6 +156,7 @@ async def on_message(message):
                     color=discord.Color.blue()
                 )
                 embed.set_thumbnail(url=image_url)
+
                 await message.channel.send(embed=embed)
             else:
                 await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
