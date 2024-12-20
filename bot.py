@@ -9,6 +9,9 @@ from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
 from bs4 import BeautifulSoup
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+
 # ===============================
 # HTTPサーバーのセットアップ
 # ===============================
@@ -68,7 +71,7 @@ def fetch_amazon_data(asin):
 
             features = []
             if item.item_info and item.item_info.features and item.item_info.features.display_values:
-                features = item.item_info.features.display_values[:3]  # 最初の3件のみ表示
+                features = item.item_info.features.display_values[:3]  # 最初の3件のみ
 
             return title, price, image_url, features
         else:
@@ -79,35 +82,43 @@ def fetch_amazon_data(asin):
 
 def fetch_sakura_checker_rating(asin):
     url = f"https://sakura-checker.jp/search/{asin}/"
-    headers = {
-        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"),
-        "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Referer": "https://sakura-checker.jp/",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Connection": "keep-alive"
-    }
-    try:
-        r = requests.get(url, headers=headers)
-        if r.status_code != 200:
-            print(f"サクラチェッカーへのアクセスエラー: {r.status_code}")
-            return None
+    # Seleniumによるヘッドレスブラウザ起動
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument('--lang=ja-JP')
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                                'Chrome/108.0.0.0 Safari/537.36')
 
-        # HTMLソースから直接rv_level0X.pngを探す
-        match = re.search(r'(/images/rv_level0[1-4]\.png)', r.text)
+    driver = webdriver.Chrome(options=chrome_options)
+    try:
+        driver.get(url)
+        # JSレンダリング待ち (必要なら明示的なウェイトを追加可能)
+        # from selenium.webdriver.common.by import By
+        # from selenium.webdriver.support.ui import WebDriverWait
+        # from selenium.webdriver.support import expected_conditions as EC
+        # WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "p.item-rv-lv")))
+        
+        html_source = driver.page_source
+        match = re.search(r'(/images/rv_level0[1-4]\.png)', html_source)
         if match:
             rating_url = "https://sakura-checker.jp" + match.group(1)
             return rating_url
-
-        print("サクラチェッカー評価は見つかりませんでした（正規表現マッチ失敗）。")
-        return None
+        else:
+            print("サクラチェッカー評価は見つかりませんでした（Selenium使用後）。")
+            return None
     except Exception as e:
         print(f"サクラチェッカー評価取得エラー: {e}")
         return None
+    finally:
+        driver.quit()
 
 def extract_asin(url):
     try:
-        parsed_url = requests.get(url, allow_redirects=True).url  # 短縮URLを展開
+        parsed_url = requests.get(url, allow_redirects=True).url
         asin_match = re.search(r"/dp/([A-Z0-9]{10})", parsed_url)
         if asin_match:
             return asin_match.group(1)
