@@ -73,7 +73,8 @@ def fetch_amazon_data(asin):
 # ===============================
 def extract_asin(url):
     try:
-        asin_match = re.search(r"/dp/([A-Z0-9]{10})", url)
+        parsed_url = requests.get(url, allow_redirects=True).url  # 短縮URLを展開
+        asin_match = re.search(r"/dp/([A-Z0-9]{10})", parsed_url)
         if asin_match:
             return asin_match.group(1)
         return None
