@@ -7,6 +7,7 @@ import threading
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
+from bs4 import BeautifulSoup
 
 # ===============================
 # HTTPサーバーのセットアップ
@@ -63,8 +64,8 @@ def fetch_amazon_data(asin):
         if response.items_result and response.items_result.items:
             item = response.items_result.items[0]
             title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
-            price = (item.offers.listings[0].price.display_amount 
-                     if item.offers and item.offers.listings and item.offers.listings[0].price 
+            price = (item.offers.listings[0].price.display_amount
+                     if item.offers and item.offers.listings and item.offers.listings[0].price
                      else "価格情報なし")
             image_url = item.images.primary.large.url if item.images and item.images.primary else ""
 
@@ -78,6 +79,42 @@ def fetch_amazon_data(asin):
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
         return None, None, None, None
+
+# ===============================
+# サクラチェッカー評価取得関数
+# ===============================
+def fetch_sakura_checker_rating(asin):
+    url = f"https://sakura-checker.jp/search/{asin}/"
+    try:
+        r = requests.get(url)
+        if r.status_code != 200:
+            print(f"サクラチェッカーへのアクセスエラー: {r.status_code}")
+            return None
+        
+        soup = BeautifulSoup(r.text, "html.parser")
+        # pタグで classにitem-rv-lvを含むものを検索
+        p_tag = soup.find("p", class_=re.compile("item-rv-lv"))
+        if p_tag:
+            img_tag = p_tag.find("img")
+            if img_tag and 'src' in img_tag.attrs:
+                img_src = img_tag['src']  # 例：/images/rv_level01.png
+                # フルURL化
+                rating_url = "https://sakura-checker.jp" + img_src
+                if "rv_level01.png" in rating_url:
+                    return rating_url
+                elif "rv_level02.png" in rating_url:
+                    return rating_url
+                elif "rv_level03.png" in rating_url:
+                    return rating_url
+                elif "rv_level04.png" in rating_url:
+                    return rating_url
+        # 該当の評価が見つからなかった場合
+        return None
+    except Exception as e:
+        print(f"サクラチェッカー評価取得エラー: {e}")
+        return None
+
+import re
 
 # ===============================
 # ASINを抽出する関数
@@ -129,7 +166,13 @@ async def on_message(message):
             if features:
                 bullet_points = "\n".join([f"- {f}" for f in features])
                 description_text += f"\n**特徴**:\n{bullet_points}\n"
-            description_text += "\n商品情報を整理しました！✨"
+
+            # サクラチェッカー評価取得
+            sakura_rating_url = fetch_sakura_checker_rating(asin)
+            if sakura_rating_url:
+                description_text += "\nサクラチェッカーでの評価はこちら！"
+            else:
+                description_text += "\nサクラチェッカーでの評価は見つかりませんでした。"
 
             embed = discord.Embed(
                 title=title,
@@ -138,8 +181,11 @@ async def on_message(message):
                 color=discord.Color.blue()
             )
             embed.set_thumbnail(url=image_url)
+            
+            # サクラチェッカー評価画像があれば、エンベッドのimageに設定
+            if sakura_rating_url:
+                embed.set_image(url=sakura_rating_url)
 
-            # チェックメッセージ削除後、エンベッド送信
             await checking_message.delete()
             await message.channel.send(embed=embed)
         else:
