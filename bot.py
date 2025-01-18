@@ -200,6 +200,9 @@ async def on_message(message):
 
             await message.channel.send(embed=embed)
 
+            # 元のメッセージの埋め込みを抑制する (ここを追加)
+        await message.edit(suppress=True) #★
+
     except Exception as e:
         print(f"on_messageエラー: {e}")
     finally:
