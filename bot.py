@@ -1,19 +1,37 @@
 import os
-import discord
 import re
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+import discord
 import requests
 from datetime import datetime, timedelta
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
 
-# 環境変数
+# ------------------------------
+# 簡易ヘルスチェック HTTP サーバー
+# ------------------------------
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+port = int(os.getenv("PORT", "8000"))
+server = HTTPServer(("0.0.0.0", port), HealthHandler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+
+# ------------------------------
+# Discord Bot 設定
+# ------------------------------
 TOKEN = os.getenv('TOKEN')
 AMAZON_ACCESS_KEY = os.getenv('AMAZON_ACCESS_KEY')
 AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')
 AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 
-# Amazon URL 検出用正規表現
+# URL 検出用正規表現
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/\S+)"
 
 def fetch_amazon_data(asin):
@@ -41,12 +59,12 @@ def fetch_amazon_data(asin):
         resp = client.get_items(request)
         items = resp.items_result.items if resp.items_result else []
         if not items:
-            return None, None, None, None, None, None, None, False
+            return None, None, None, None, None, False, None, []
 
         item = items[0]
         title = getattr(item.item_info.title, 'display_value', '商品名なし')
         features = getattr(item.item_info.features, 'display_values', [])[:3]
-        image_url = getattr(item.images.primary.large, 'url', '')
+        image_url = getattr(item.images.primary.large, 'url', None)
 
         listings = item.offers.listings if item.offers else []
         if not listings:
@@ -73,11 +91,11 @@ def fetch_amazon_data(asin):
             for promo in getattr(listing, 'promotions', [])
         )
 
-        return title, saving, current, discount_pct, discount_amt, is_time_sale, image_url, features, True
+        return title, saving, current, discount_pct, discount_amt, is_time_sale, image_url, features
 
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
-        return None, None, None, None, None, None, None, False
+        return None, None, None, None, None, False, None, []
 
 
 def extract_asin(url):
@@ -89,7 +107,7 @@ def extract_asin(url):
         print(f"ASIN抽出エラー: {e}")
         return None
 
-# Discord Bot セットアップ
+# Discord クライアント設定
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
@@ -116,11 +134,11 @@ async def on_message(message):
                 continue
 
             data = fetch_amazon_data(asin)
-            if not data or not data[8]:
+            if not data or data[0] is None:
                 await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
                 continue
 
-            title, saving, current, pct, amt, on_sale, img, feats, _ = data
+            title, saving, current, pct, amt, on_sale, img, feats = data
             affiliate = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
 
             now = datetime.utcnow() + timedelta(hours=9)
@@ -151,13 +169,12 @@ async def on_message(message):
 
             await message.channel.send(embed=embed)
 
-        # 元の埋め込みを抑制
         await message.edit(suppress=True)
 
     finally:
         await checking.delete()
 
-# エントリーポイント
+# 実行エントリーポイント
 if __name__ == "__main__":
     if TOKEN:
         client.run(TOKEN)
