@@ -163,4 +163,3 @@ if __name__ == "__main__":
         client.run(TOKEN)
     else:
         print("TOKENが設定されていません。BOTを起動できません。")
-```
