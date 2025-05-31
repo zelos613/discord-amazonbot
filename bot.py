@@ -1,42 +1,39 @@
 import os
-import re
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
 import discord
+import re
 import requests
 from datetime import datetime, timedelta
+from flask import Flask
+import threading
 from paapi5_python_sdk.api.default_api import DefaultApi
 from paapi5_python_sdk.models.get_items_request import GetItemsRequest
 from paapi5_python_sdk.models.partner_type import PartnerType
 
-# ------------------------------
-# 簡易ヘルスチェック HTTP サーバー
-# ------------------------------
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
+app = Flask(__name__)
 
-port = int(os.getenv("PORT", "8000"))
-server = HTTPServer(("0.0.0.0", port), HealthHandler)
-threading.Thread(target=server.serve_forever, daemon=True).start()
+@app.route("/")
+def health_check():
+    return "OK", 200
 
-# ------------------------------
-# Discord Bot 設定
-# ------------------------------
+def run_http_server():
+    port = int(os.getenv("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port)
+
+http_thread = threading.Thread(target=run_http_server)
+http_thread.daemon = True
+http_thread.start()
+
 TOKEN = os.getenv('TOKEN')
 AMAZON_ACCESS_KEY = os.getenv('AMAZON_ACCESS_KEY')
 AMAZON_SECRET_KEY = os.getenv('AMAZON_SECRET_KEY')
 AMAZON_ASSOCIATE_TAG = os.getenv('AMAZON_ASSOCIATE_TAG')
 
-# URL 検出用正規表現
+# 日本語や全角記号が入ったURLに対応するため、\S+を使用
 AMAZON_URL_REGEX = r"(https?://(?:www\.)?(?:amazon\.co\.jp|amzn\.asia|amzn\.to)/\S+)"
 
 def fetch_amazon_data(asin):
     try:
-        client = DefaultApi(
+        api_client = DefaultApi(
             access_key=AMAZON_ACCESS_KEY,
             secret_key=AMAZON_SECRET_KEY,
             host="webservices.amazon.co.jp",
@@ -56,58 +53,75 @@ def fetch_amazon_data(asin):
                 "Offers.Listings.Promotions"
             ]
         )
-        resp = client.get_items(request)
-        items = resp.items_result.items if resp.items_result else []
-        if not items:
-            return None, None, None, None, None, False, None, []
+        response = api_client.get_items(request)
 
-        item = items[0]
-        title = getattr(item.item_info.title, 'display_value', '商品名なし')
-        features = getattr(item.item_info.features, 'display_values', [])[:3]
-        image_url = getattr(item.images.primary.large, 'url', None)
+        if response.items_result and response.items_result.items:
+            item = response.items_result.items[0]
+            
+            title = item.item_info.title.display_value if item.item_info and item.item_info.title else "商品名なし"
+            features = []
+            if (item.item_info and item.item_info.features 
+                and item.item_info.features.display_values):
+                features = item.item_info.features.display_values[:3]
+            
+            image_url = ""
+            if item.images and item.images.primary and item.images.primary.large:
+                image_url = item.images.primary.large.url
 
-        listings = item.offers.listings if item.offers else []
-        if not listings:
-            return title, None, None, None, None, False, image_url, features
+            # オファー情報
+            if not (item.offers and item.offers.listings and len(item.offers.listings) > 0):
+                return title, None, None, None, None, image_url, features, False
 
-        listing = listings[0]
-        current = listing.price.display_amount if listing.price else None
-        saving = listing.saving_basis.display_amount if listing.saving_basis else None
+            listing = item.offers.listings[0]
+            current_price = listing.price.display_amount if listing.price else None
+            
+            # SavingBasis(参考価格)がある場合
+            saving_basis = listing.saving_basis
+            if saving_basis and saving_basis.display_amount:
+                strike_price = saving_basis.display_amount
+            else:
+                strike_price = None
 
-        discount_pct = None
-        discount_amt = None
-        if saving and current:
-            try:
-                orig = float(saving.replace('¥','').replace(',',''))
-                now = float(current.replace('¥','').replace(',',''))
-                if orig > now:
-                    discount_pct = int(round((orig - now) / orig * 100))
-                    discount_amt = orig - now
-            except:
-                pass
+            # 割引率の計算
+            discount_percentage = None
+            discount_amount = None
+            if strike_price and current_price:
+                try:
+                    strike_num = float(strike_price.replace(",", "").replace("¥", ""))
+                    current_num = float(current_price.replace(",", "").replace("¥", ""))
+                    if strike_num > current_num:  # 割引されているときだけ
+                        discount_percentage = int(round((strike_num - current_num) / strike_num * 100))
+                        discount_amount = strike_num - current_num
+                except:
+                    pass
+            
+            # タイムセール(簡易判定)
+            is_time_sale = False
+            if listing.promotions:
+                for promo in listing.promotions:
+                    if promo.summary and ("タイムセール" in promo.summary or "time sale" in promo.summary.lower()):
+                        is_time_sale = True
+                        break
 
-        is_time_sale = any(
-            promo.summary and ('タイムセール' in promo.summary or 'time sale' in promo.summary.lower())
-            for promo in getattr(listing, 'promotions', [])
-        )
-
-        return title, saving, current, discount_pct, discount_amt, is_time_sale, image_url, features
-
+            return (title, strike_price, current_price, discount_percentage, discount_amount, 
+                    is_time_sale, image_url, features, True)
+        else:
+            return None, None, None, None, None, None, None, False
     except Exception as e:
         print(f"Amazon情報取得エラー: {e}")
-        return None, None, None, None, None, False, None, []
-
+        return None, None, None, None, None, None, None, False
 
 def extract_asin(url):
     try:
-        final_url = requests.get(url, allow_redirects=True, timeout=5).url
-        m = re.search(r"/dp/([A-Z0-9]{10})", final_url)
-        return m.group(1) if m else None
+        parsed_url = requests.get(url, allow_redirects=True, timeout=5).url
+        asin_match = re.search(r"/dp/([A-Z0-9]{10})", parsed_url)
+        if asin_match:
+            return asin_match.group(1)
+        return None
     except Exception as e:
         print(f"ASIN抽出エラー: {e}")
         return None
 
-# Discord クライアント設定
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
@@ -125,58 +139,77 @@ async def on_message(message):
     if not urls:
         return
 
-    checking = await message.channel.send("リンクを確認中です...🔍")
+    checking_message = None
     try:
+        checking_message = await message.channel.send("リンクを確認中です...🔍")
+
         for url in urls:
             asin = extract_asin(url)
             if not asin:
                 await message.channel.send("ASINが取得できませんでした。❌")
                 continue
 
-            data = fetch_amazon_data(asin)
-            if not data or data[0] is None:
+            (title, strike_price, current_price, 
+             discount_percentage, discount_amount, 
+             is_time_sale, image_url, features, has_offer) = fetch_amazon_data(asin)
+
+            if not (title and has_offer and current_price):
                 await message.channel.send("商品情報を取得できませんでした。リンクが正しいか確認してください。")
                 continue
 
-            title, saving, current, pct, amt, on_sale, img, feats = data
-            affiliate = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
+            affiliate_url = f"https://www.amazon.co.jp/dp/{asin}/?tag={AMAZON_ASSOCIATE_TAG}"
 
-            now = datetime.utcnow() + timedelta(hours=9)
-            time_str = now.strftime("%Y/%m/%d %H:%M")
+            # 現在のUTC→JST
+            now_utc = datetime.utcnow()
+            jst = now_utc + timedelta(hours=9)
+            time_str = jst.strftime("%Y/%m/%d %H:%M")
 
-            price_line = f"{current}"
-            if saving:
-                price_line = f"~~{saving}~~ → {price_line}"
-            if pct and amt:
-                off = f"({pct}%OFF)"
-                disc = f"**¥{int(amt):,}引き**"
-                if on_sale:
-                    off = f"**{off} タイムセール中!**"
-                price_line += f" {off} {disc}"
+            # 価格表示部分
+            price_line = ""
+            # 定価があれば打ち消し線を入れる
+            if strike_price:
+                price_line += f"~~{strike_price}~~ → "
+
+            price_line += current_price
+
+            # 割引率と値引き額
+            if discount_percentage and discount_percentage > 0 and discount_amount:
+                # 「(XX%OFF)」と 「**¥YYY引き**」を表示
+                off_str = f"({discount_percentage}%OFF)"
+                discount_str = f"**¥{int(discount_amount):,}引き**"  # 3桁区切り
+                if is_time_sale:
+                    off_str = f"**{off_str} タイムセール中!**"
+                price_line += f" {off_str} {discount_str}"
+
+            # 時刻
             price_line += f" （{time_str}時点）"
 
             desc = f"**価格**: {price_line}\n"
-            if feats:
-                desc += "\n**特徴**:\n" + '\n'.join(f"- {f}" for f in feats)
+            if features:
+                bullet_points = "\n".join([f"- {f}" for f in features])
+                desc += f"\n**特徴**:\n{bullet_points}\n"
 
+            embed_color = discord.Color.orange() if is_time_sale else discord.Color.blue()
             embed = discord.Embed(
                 title=title,
-                url=affiliate,
+                url=affiliate_url,
                 description=desc,
-                color=discord.Color.orange() if on_sale else discord.Color.blue()
+                color=embed_color
             )
-            embed.set_thumbnail(url=img)
+            embed.set_thumbnail(url=image_url)
 
             await message.channel.send(embed=embed)
 
-        await message.edit(suppress=True)
+            # 元のメッセージの埋め込みを抑制する (ここを追加)
+        await message.edit(suppress=True) #★
 
+    except Exception as e:
+        print(f"on_messageエラー: {e}")
     finally:
-        await checking.delete()
+        if checking_message:
+            await checking_message.delete()
 
-# 実行エントリーポイント
-if __name__ == "__main__":
-    if TOKEN:
-        client.run(TOKEN)
-    else:
-        print("TOKENが設定されていません。BOTを起動できません。")
+if TOKEN:
+    client.run(TOKEN)
+else:
+    print("TOKENが設定されていません。BOTは起動せず、Flaskサーバーのみ稼働します。")
